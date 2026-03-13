@@ -7,36 +7,13 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +26,7 @@ import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
 import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.service.MainService
+import com.supertesla.aa.ui.theme.*
 
 @Composable
 fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
@@ -59,16 +37,15 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
     var vpnPermissionGranted by remember { mutableStateOf(false) }
 
     val vpnLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
         vpnPermissionGranted = true
         MainService.start(context)
     }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        // Proceed regardless - notification permission is not strictly required
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
         requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
     }
 
@@ -79,45 +56,43 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(horizontal = 28.dp)
+                .padding(top = 48.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(32.dp))
-
+            // Header
             Text(
                 text = "SuperTesla",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.displayMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = "Android Auto",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                style = MaterialTheme.typography.titleMedium,
+                color = TeslaGray
             )
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(36.dp))
 
-            // Status card
-            StatusCard(appState = appState, hotspotState = hotspotState)
-
-            Spacer(Modifier.height(24.dp))
-
-            // URL display (when server is running)
+            // URL card (prominent when running)
             if (appState is AppState.ServerRunning || appState is AppState.Streaming) {
                 UrlCard(url = AppConfig.getServerUrl())
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
             }
 
-            // Error display
+            // Status indicators
+            StatusCard(appState = appState, hotspotState = hotspotState)
+
+            // Error
             if (appState is AppState.Error) {
+                Spacer(Modifier.height(20.dp))
                 ErrorCard(error = appState as AppState.Error)
-                Spacer(Modifier.height(24.dp))
             }
 
             Spacer(Modifier.weight(1f))
 
-            // Start/Stop button
+            // Big START / STOP button
             Button(
                 onClick = {
                     if (appState.isRunning) {
@@ -127,7 +102,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
                             != PackageManager.PERMISSION_GRANTED
                         ) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
                             requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
                         }
@@ -135,28 +110,31 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
+                    .height(72.dp),
+                shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (appState.isRunning)
-                        MaterialTheme.colorScheme.error
-                    else
-                        MaterialTheme.colorScheme.primary
+                    containerColor = if (appState.isRunning) TeslaRed else TeslaBlue
                 )
             ) {
                 Text(
                     text = if (appState.isRunning) "STOP" else "START",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = if (appState.isRunning) TeslaWhite else TeslaDark
                 )
             }
 
-            // Settings link
-            TextButton(onClick = onSettings) {
-                Text("Settings", fontSize = 14.sp)
-            }
+            Spacer(Modifier.height(12.dp))
 
-            Spacer(Modifier.height(16.dp))
+            TextButton(
+                onClick = onSettings,
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TeslaGray
+                )
+            }
         }
     }
 }
@@ -165,51 +143,31 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
 private fun StatusCard(appState: AppState, hotspotState: HotspotState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = TeslaSurface),
+        shape = MaterialTheme.shapes.large
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Status",
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-            Spacer(Modifier.height(12.dp))
-
+        Column(modifier = Modifier.padding(24.dp)) {
             StatusRow(
                 label = "Hotspot",
                 isActive = hotspotState is HotspotState.Enabled || hotspotState is HotspotState.ClientConnected,
                 detail = when (hotspotState) {
                     is HotspotState.ClientConnected -> "${hotspotState.clients.size} client(s)"
-                    is HotspotState.Enabled -> "No clients"
-                    is HotspotState.Disabled -> "Disabled"
-                    is HotspotState.Unknown -> "Unknown"
+                    is HotspotState.Enabled -> "Active"
+                    is HotspotState.Disabled -> "Off"
+                    is HotspotState.Unknown -> "Checking..."
                 }
             )
-            StatusRow(
-                label = "VPN",
-                isActive = appState is AppState.VpnReady || appState is AppState.StartingServer ||
-                        appState is AppState.ServerRunning || appState is AppState.Streaming,
-                detail = if (appState is AppState.VpnReady) appState.virtualIp
-                else if (appState is AppState.ServerRunning || appState is AppState.Streaming) AppConfig.DEFAULT_VIRTUAL_IP
-                else "Inactive"
-            )
+            Spacer(Modifier.height(16.dp))
             StatusRow(
                 label = "Server",
                 isActive = appState is AppState.ServerRunning || appState is AppState.Streaming,
-                detail = if (appState is AppState.ServerRunning) "Port ${AppConfig.SERVER_PORT}"
-                else "Stopped"
+                detail = if (appState is AppState.ServerRunning || appState is AppState.Streaming) "Running" else "Stopped"
             )
+            Spacer(Modifier.height(16.dp))
             StatusRow(
                 label = "Tesla",
                 isActive = hotspotState is HotspotState.ClientConnected,
-                detail = when (hotspotState) {
-                    is HotspotState.ClientConnected ->
-                        hotspotState.clients.firstOrNull()?.ipAddress ?: "Connected"
-                    else -> "Waiting..."
-                }
+                detail = if (hotspotState is HotspotState.ClientConnected) "Connected" else "Waiting..."
             )
         }
     }
@@ -218,27 +176,26 @@ private fun StatusCard(appState: AppState, hotspotState: HotspotState) {
 @Composable
 private fun StatusRow(label: String, isActive: Boolean, detail: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(14.dp)
                 .clip(CircleShape)
-                .background(if (isActive) Color(0xFF4CAF50) else Color(0xFF757575))
+                .background(if (isActive) TeslaGreen else TeslaDimText)
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(16.dp))
         Text(
             text = label,
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.width(80.dp)
+            modifier = Modifier.width(100.dp)
         )
         Text(
             text = detail,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            fontSize = 14.sp
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (isActive) TeslaGreen else TeslaGray
         )
     }
 }
@@ -247,27 +204,28 @@ private fun StatusRow(label: String, isActive: Boolean, detail: String) {
 private fun UrlCard(url: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        colors = CardDefaults.cardColors(containerColor = TeslaPrimaryContainer),
+        shape = MaterialTheme.shapes.large
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Open in Tesla Browser:",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                text = "Open in Tesla Browser",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TeslaGray
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = url,
-                fontSize = 20.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = TeslaBlue
             )
         }
     }
@@ -277,21 +235,20 @@ private fun UrlCard(url: String) {
 private fun ErrorCard(error: AppState.Error) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
+        colors = CardDefaults.cardColors(containerColor = TeslaErrorContainer),
+        shape = MaterialTheme.shapes.medium
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Text(
-                text = "Error",
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                text = "Something went wrong",
+                style = MaterialTheme.typography.titleMedium,
+                color = TeslaRed
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = error.message,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-                fontSize = 14.sp
+                style = MaterialTheme.typography.bodyMedium,
+                color = TeslaWhite.copy(alpha = 0.7f)
             )
         }
     }

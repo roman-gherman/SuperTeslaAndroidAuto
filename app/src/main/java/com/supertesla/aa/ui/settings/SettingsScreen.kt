@@ -13,23 +13,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.supertesla.aa.core.config.AppConfig
+import com.supertesla.aa.ui.theme.*
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
 
-    var virtualIp by remember { mutableStateOf(prefs.getString("virtual_ip", AppConfig.DEFAULT_VIRTUAL_IP) ?: AppConfig.DEFAULT_VIRTUAL_IP) }
-    var serverPort by remember { mutableIntStateOf(prefs.getInt("server_port", AppConfig.SERVER_PORT)) }
     var streamingMode by remember { mutableStateOf(prefs.getString("streaming_mode", "auto") ?: "auto") }
     var resolution by remember { mutableStateOf(prefs.getString("resolution", "720p") ?: "720p") }
     var showDebug by remember { mutableStateOf(prefs.getBoolean("show_debug", false)) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = TeslaDark
     ) {
         Column(
             modifier = Modifier
@@ -40,60 +38,57 @@ fun SettingsScreen(onBack: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onBack) { Text("Back") }
+                TextButton(
+                    onClick = onBack,
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text("Back", style = MaterialTheme.typography.bodyLarge, color = TeslaBlue)
+                }
                 Spacer(Modifier.weight(1f))
-                Text("Settings", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = TeslaWhite
+                )
                 Spacer(Modifier.weight(1f))
-                Spacer(Modifier.width(48.dp))
+                Spacer(Modifier.width(64.dp))
             }
 
-            // Video Section
+            Spacer(Modifier.height(8.dp))
+
+            // Video
             SectionHeader("Video")
             DropdownSetting("Resolution", resolution, listOf("720p", "480p", "360p")) {
-                resolution = it
-                prefs.edit().putString("resolution", it).apply()
+                resolution = it; prefs.edit().putString("resolution", it).apply()
             }
-            DropdownSetting("Streaming Mode", streamingMode, listOf("auto", "webrtc", "mse", "mjpeg")) {
-                streamingMode = it
-                prefs.edit().putString("streaming_mode", it).apply()
+            DropdownSetting("Streaming", streamingMode, listOf("auto", "webrtc", "mse", "mjpeg")) {
+                streamingMode = it; prefs.edit().putString("streaming_mode", it).apply()
             }
 
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Network Section
-            SectionHeader("Network")
-            TextSetting("Virtual IP", virtualIp) {
-                virtualIp = it
-                prefs.edit().putString("virtual_ip", it).apply()
-            }
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Advanced Section
+            // Advanced
             SectionHeader("Advanced")
-            SwitchSetting("Show Debug Overlay", showDebug) {
-                showDebug = it
-                prefs.edit().putBoolean("show_debug", it).apply()
+            SwitchSetting("Debug Overlay", showDebug) {
+                showDebug = it; prefs.edit().putBoolean("show_debug", it).apply()
             }
-            ActionSetting("Export Logs") {
-                exportLogs(context)
-            }
+            ActionSetting("Export Logs") { exportLogs(context) }
             ActionSetting("Re-run Setup Wizard") {
                 prefs.edit().putBoolean("wizard_completed", false).apply()
             }
 
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // About Section
+            // About
             SectionHeader("About")
             InfoSetting("Version", "0.1.0")
-            InfoSetting("Hostname URL", AppConfig.getServerUrl())
-            InfoSetting("Fallback URL", "http://$virtualIp:${AppConfig.SERVER_PORT}")
+            InfoSetting("URL", AppConfig.getServerUrl())
+            InfoSetting("Fallback", AppConfig.getServerUrlFallback())
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(40.dp))
         }
     }
 }
@@ -102,10 +97,9 @@ fun SettingsScreen(onBack: () -> Unit) {
 private fun SectionHeader(title: String) {
     Text(
         text = title,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        fontSize = 14.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = TeslaBlue
     )
 }
 
@@ -116,17 +110,17 @@ private fun DropdownSetting(label: String, value: String, options: List<String>,
         modifier = Modifier
             .fillMaxWidth()
             .clickable { expanded = true }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label)
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
         Box {
-            Text(value, color = MaterialTheme.colorScheme.primary)
+            Text(value, style = MaterialTheme.typography.bodyLarge, color = TeslaBlue)
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
                     DropdownMenuItem(
-                        text = { Text(option) },
+                        text = { Text(option, style = MaterialTheme.typography.bodyLarge) },
                         onClick = { onSelect(option); expanded = false }
                     )
                 }
@@ -136,46 +130,23 @@ private fun DropdownSetting(label: String, value: String, options: List<String>,
 }
 
 @Composable
-private fun TextSetting(label: String, value: String, onUpdate: (String) -> Unit) {
-    var editing by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf(value) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { editing = !editing }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label)
-        if (editing) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.width(160.dp),
-                singleLine = true,
-                trailingIcon = {
-                    TextButton(onClick = { onUpdate(text); editing = false }) { Text("OK") }
-                }
-            )
-        } else {
-            Text(value, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-        }
-    }
-}
-
-@Composable
 private fun SwitchSetting(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 24.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label)
-        Switch(checked = checked, onCheckedChange = onToggle)
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = TeslaBlue,
+                checkedThumbColor = TeslaWhite
+            )
+        )
     }
 }
 
@@ -186,8 +157,9 @@ private fun ActionSetting(label: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        color = MaterialTheme.colorScheme.primary
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        style = MaterialTheme.typography.bodyLarge,
+        color = TeslaBlue
     )
 }
 
@@ -196,11 +168,11 @@ private fun InfoSetting(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label)
-        Text(value, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = TeslaGray)
     }
 }
 
@@ -208,7 +180,7 @@ private fun exportLogs(context: Context) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, "SuperTesla AA Logs")
-        putExtra(Intent.EXTRA_TEXT, "Log export from SuperTesla AA v0.1.0\n\nAttach logcat output.")
+        putExtra(Intent.EXTRA_TEXT, "Log export from SuperTesla AA v0.1.0")
     }
     context.startActivity(Intent.createChooser(intent, "Export Logs").apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK

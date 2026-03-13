@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.network.hotspot.HotspotManager
+import com.supertesla.aa.ui.theme.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -43,12 +43,10 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
     var hotspotOn by remember { mutableStateOf(false) }
     var hotspotAutoAdvanced by remember { mutableStateOf(false) }
 
-    // Request Bluetooth permission for Tesla detection (Android 12+)
     val btPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* granted or not, continue silently */ }
+    ) { }
 
-    // Try to start AA head unit server and request BT permission silently on launch
     LaunchedEffect(Unit) {
         tryStartHeadUnitServer(context)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
@@ -56,14 +54,12 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
         }
     }
 
-    // Observe hotspot state
     LaunchedEffect(Unit) {
         hotspotManager.observeHotspotState().collectLatest { state ->
             hotspotOn = state is HotspotState.Enabled || state is HotspotState.ClientConnected
         }
     }
 
-    // Auto-advance once when hotspot is on and user arrives at the hotspot page
     val currentPage = pagerState.currentPage
     LaunchedEffect(hotspotOn, currentPage) {
         if (hotspotOn && !hotspotAutoAdvanced && currentPage == 1) {
@@ -73,7 +69,6 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
         }
     }
 
-    // VPN permission handling - requested inline when user taps Start
     var vpnGranted by remember { mutableStateOf(VpnService.prepare(context) == null) }
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -81,27 +76,25 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = TeslaDark
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Page indicators
+            // Page dots
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 48.dp, bottom = 16.dp),
+                    .padding(top = 56.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
                 repeat(PAGE_COUNT) { index ->
                     Box(
                         modifier = Modifier
-                            .padding(horizontal = 4.dp)
-                            .size(if (index == pagerState.currentPage) 10.dp else 8.dp)
+                            .padding(horizontal = 5.dp)
+                            .size(if (index == pagerState.currentPage) 12.dp else 10.dp)
                             .clip(CircleShape)
                             .background(
-                                if (index <= pagerState.currentPage)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
+                                if (index <= pagerState.currentPage) TeslaBlue
+                                else TeslaDimText
                             )
                     )
                 }
@@ -123,13 +116,19 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 if (pagerState.currentPage > 0) {
-                    OutlinedButton(onClick = {
-                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                    }) { Text("Back") }
+                    OutlinedButton(
+                        onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } },
+                        modifier = Modifier.height(56.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TeslaGray)
+                    ) {
+                        Text("Back", style = MaterialTheme.typography.bodyLarge)
+                    }
                 } else {
                     Spacer(Modifier.width(1.dp))
                 }
@@ -138,24 +137,26 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
                 Button(
                     onClick = {
                         if (isLastPage) {
-                            // Request VPN permission if not yet granted, then complete
                             if (!vpnGranted) {
                                 val prepareIntent = VpnService.prepare(context)
-                                if (prepareIntent != null) {
-                                    vpnLauncher.launch(prepareIntent)
-                                } else {
-                                    vpnGranted = true
-                                    onComplete()
-                                }
+                                if (prepareIntent != null) vpnLauncher.launch(prepareIntent)
+                                else { vpnGranted = true; onComplete() }
                             } else {
                                 onComplete()
                             }
                         } else {
                             scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                         }
-                    }
+                    },
+                    modifier = Modifier.height(56.dp).widthIn(min = 140.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(containerColor = TeslaBlue)
                 ) {
-                    Text(if (isLastPage) "Start" else "Next")
+                    Text(
+                        if (isLastPage) "Start" else "Next",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TeslaDark
+                    )
                 }
             }
         }
@@ -166,42 +167,80 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
 private fun WelcomePage() {
     WizardPage(
         title = "SuperTesla",
-        subtitle = "Android Auto for Tesla",
-        description = "Use your favourite Android Auto apps\n" +
-                "right on your Tesla's screen.\n\n" +
-                "Google Maps, Spotify, WhatsApp\n" +
-                "and more - no extra hardware needed."
-    )
+        subtitle = "Android Auto for Tesla"
+    ) {
+        Spacer(Modifier.height(32.dp))
+        Text(
+            text = "Use your favourite apps\nright on your Tesla's screen.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = TeslaWhite.copy(alpha = 0.8f),
+            lineHeight = 28.sp
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "Google Maps  ·  Spotify  ·  WhatsApp\nand more",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = TeslaGray,
+            lineHeight = 26.sp
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "No extra hardware needed.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TeslaBlue
+        )
+    }
 }
 
 @Composable
 private fun HotspotPage(context: android.content.Context, hotspotOn: Boolean) {
     WizardPage(
         title = if (hotspotOn) "Hotspot Is On" else "Turn On Hotspot",
-        subtitle = "Your Tesla connects through it",
-        description = if (hotspotOn)
-            "Hotspot is active.\nNow connect your Tesla's WiFi to it."
-        else
-            "Enable your phone's WiFi hotspot,\nthen connect your Tesla's WiFi to it."
+        subtitle = "Your Tesla connects through it"
     ) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
+        Text(
+            text = if (hotspotOn)
+                "Hotspot is active.\nNow connect your Tesla's WiFi to it."
+            else
+                "Enable your phone's WiFi hotspot,\nthen connect your Tesla's WiFi to it.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = TeslaWhite.copy(alpha = 0.8f),
+            lineHeight = 28.sp
+        )
+        Spacer(Modifier.height(32.dp))
         if (hotspotOn) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(16.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF4CAF50))
+                        .background(TeslaGreen)
                 )
-                Spacer(Modifier.width(8.dp))
-                Text("Hotspot active", color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "Hotspot active",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TeslaGreen
+                )
             }
         } else {
-            OutlinedButton(onClick = {
-                context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                })
-            }) { Text("Open WiFi Settings") }
+            OutlinedButton(
+                onClick = {
+                    context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    })
+                },
+                modifier = Modifier
+                    .fillMaxWidth(0.7f)
+                    .height(56.dp),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Text("Open WiFi Settings", style = MaterialTheme.typography.bodyLarge)
+            }
         }
     }
 }
@@ -213,38 +252,42 @@ private fun ConnectTeslaPage() {
 
     WizardPage(
         title = "Open in Tesla",
-        subtitle = "One last step",
-        description = "On your Tesla's browser, go to:"
+        subtitle = "One last step"
     ) {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "On your Tesla's browser, go to:",
+            style = MaterialTheme.typography.bodyLarge,
+            color = TeslaWhite.copy(alpha = 0.8f)
+        )
         Spacer(Modifier.height(20.dp))
         Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+            colors = CardDefaults.cardColors(containerColor = TeslaPrimaryContainer),
+            shape = MaterialTheme.shapes.large
         ) {
             Text(
                 text = url,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-                fontSize = 26.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp, vertical = 20.dp),
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = TeslaBlue
             )
         }
         Spacer(Modifier.height(12.dp))
         Text(
             text = "or: $fallback",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+            style = MaterialTheme.typography.labelMedium,
+            color = TeslaDimText
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
         Text(
-            text = "Tap Start below when ready.\nAndroid Auto will appear on your Tesla.",
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-            lineHeight = 20.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            text = "Tap Start when ready.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = TeslaGray
         )
     }
 }
@@ -253,8 +296,7 @@ private fun ConnectTeslaPage() {
 private fun WizardPage(
     title: String,
     subtitle: String,
-    description: String,
-    extra: @Composable ColumnScope.() -> Unit = {}
+    content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -263,23 +305,23 @@ private fun WizardPage(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(4.dp))
-        Text(subtitle, fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-        Spacer(Modifier.height(24.dp))
-        Text(description, fontSize = 15.sp, textAlign = TextAlign.Center,
-            lineHeight = 22.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f))
-        extra()
+        Text(
+            text = title,
+            style = MaterialTheme.typography.displayMedium,
+            color = TeslaBlue,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.titleMedium,
+            color = TeslaGray,
+            textAlign = TextAlign.Center
+        )
+        content()
     }
 }
 
-/**
- * Try to start the Android Auto head unit server programmatically.
- * This eliminates the need for users to enable developer settings manually.
- */
 private fun tryStartHeadUnitServer(context: android.content.Context) {
     try {
         val intent = Intent().apply {
@@ -289,8 +331,5 @@ private fun tryStartHeadUnitServer(context: android.content.Context) {
             )
         }
         context.startService(intent)
-    } catch (_: Exception) {
-        // Silently fail - service may not be available or permission denied.
-        // The AA emulator will handle connection failure gracefully.
-    }
+    } catch (_: Exception) {}
 }
