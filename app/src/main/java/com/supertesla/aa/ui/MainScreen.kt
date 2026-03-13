@@ -6,10 +6,13 @@ import android.net.VpnService
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.ui.res.painterResource
+import com.supertesla.aa.R
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,17 +63,17 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                 .padding(top = 48.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header
+            // Logo + Header
+            Image(
+                painter = painterResource(R.drawable.logo),
+                contentDescription = "SuperTesla",
+                modifier = Modifier.size(80.dp)
+            )
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = "SuperTesla",
-                style = MaterialTheme.typography.displayMedium,
+                style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Android Auto",
-                style = MaterialTheme.typography.titleMedium,
-                color = TeslaGray
             )
 
             Spacer(Modifier.height(36.dp))

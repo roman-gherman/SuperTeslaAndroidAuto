@@ -34,18 +34,23 @@ fun SettingsScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            // Top bar
+            // Top bar with prominent back button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
+                Button(
                     onClick = onBack,
-                    modifier = Modifier.height(48.dp)
+                    modifier = Modifier.height(48.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TeslaSurfaceVariant,
+                        contentColor = TeslaBlue
+                    )
                 ) {
-                    Text("Back", style = MaterialTheme.typography.bodyLarge, color = TeslaBlue)
+                    Text("\u2190  Back", style = MaterialTheme.typography.bodyLarge)
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -54,7 +59,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     color = TeslaWhite
                 )
                 Spacer(Modifier.weight(1f))
-                Spacer(Modifier.width(64.dp))
+                Spacer(Modifier.width(88.dp)) // balance the back button width
             }
 
             Spacer(Modifier.height(8.dp))

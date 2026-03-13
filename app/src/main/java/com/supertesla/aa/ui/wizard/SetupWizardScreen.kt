@@ -8,12 +8,15 @@ import android.net.VpnService
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.ui.res.painterResource
+import com.supertesla.aa.R
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -169,7 +172,13 @@ private fun WelcomePage() {
         title = "SuperTesla",
         subtitle = "Android Auto for Tesla"
     ) {
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(12.dp))
+        Image(
+            painter = painterResource(R.drawable.logo),
+            contentDescription = "SuperTesla logo",
+            modifier = Modifier.size(140.dp)
+        )
+        Spacer(Modifier.height(20.dp))
         Text(
             text = "Use your favourite apps\nright on your Tesla's screen.",
             style = MaterialTheme.typography.bodyLarge,

@@ -7,8 +7,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +73,12 @@ class MainActivity : ComponentActivity() {
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
+                                Image(
+                                    painter = painterResource(R.drawable.logo),
+                                    contentDescription = "SuperTesla logo",
+                                    modifier = Modifier.size(120.dp)
+                                )
+                                Spacer(Modifier.height(20.dp))
                                 Text(
                                     text = "Tesla Detected",
                                     style = MaterialTheme.typography.displayMedium,
