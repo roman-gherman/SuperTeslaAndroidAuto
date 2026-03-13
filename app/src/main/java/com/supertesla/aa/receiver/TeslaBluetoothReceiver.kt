@@ -72,19 +72,24 @@ class TeslaBluetoothReceiver : BroadcastReceiver() {
         }
         manager.createNotificationChannel(channel)
 
-        // Intent to open the app
+        // Intent to open the app with auto-start flag
         val openIntent = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_TESLA_DETECTED, true)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Intent to start streaming directly
-        val startIntent = PendingIntent.getService(
+        // "Start" action: open app with auto-start (will prompt for hotspot if needed)
+        val startIntent = PendingIntent.getActivity(
             context, 2,
-            Intent(context, MainService::class.java),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_TESLA_DETECTED, true)
+                putExtra(EXTRA_AUTO_START, true)
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -108,5 +113,7 @@ class TeslaBluetoothReceiver : BroadcastReceiver() {
     companion object {
         const val CHANNEL_ID = "tesla_detection"
         const val NOTIFICATION_ID = 2001
+        const val EXTRA_TESLA_DETECTED = "tesla_detected"
+        const val EXTRA_AUTO_START = "auto_start"
     }
 }
