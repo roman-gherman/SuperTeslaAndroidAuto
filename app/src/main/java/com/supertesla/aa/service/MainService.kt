@@ -23,6 +23,7 @@ import com.supertesla.aa.network.vpn.VpnTunnelService
 import com.supertesla.aa.network.webserver.VideoStreamHandler
 import com.supertesla.aa.network.webserver.WebServer
 import com.supertesla.aa.network.websocket.TouchInputRelay
+import com.supertesla.aa.streaming.audio.AacEncoder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +46,7 @@ class MainService : Service() {
     private var pipelineJob: Job? = null
     private var webServer: WebServer? = null
     private var aaEmulator: AAHeadUnitEmulator? = null
+    private var aacEncoder: AacEncoder? = null
     private var vpnBound = false
 
     private var vpnService: VpnTunnelService? = null
@@ -180,12 +182,28 @@ class MainService : Service() {
                 launch(Dispatchers.IO) {
                     try {
                         emulator.connect()
+
                         // Wire video flow from AA emulator to web server
                         val videoHandler = emulator.videoHandler
                         if (videoHandler != null) {
                             val videoDataFlow = videoHandler.videoFrames.map { it.data }
                             webServer?.videoFlow = videoDataFlow
                             Timber.i("Video flow wired to web server")
+                        }
+
+                        // Wire audio: start AAC encoder and collect media audio
+                        val mediaAudio = emulator.audioMediaHandler
+                        if (mediaAudio != null) {
+                            val encoder = AacEncoder(sampleRate = 48000, channelCount = 2, bitRate = 128_000)
+                            aacEncoder = encoder
+                            encoder.start()
+                            Timber.i("AAC encoder started for media audio")
+
+                            launch {
+                                mediaAudio.audioFrames.collect { frame ->
+                                    encoder.feedPcm(frame.data, frame.timestamp)
+                                }
+                            }
                         }
                     } catch (e: Exception) {
                         Timber.w(e, "AA connection failed (server may not be running)")
@@ -205,6 +223,9 @@ class MainService : Service() {
         Timber.d("Stopping pipeline")
         pipelineJob?.cancel()
         pipelineJob = null
+
+        aacEncoder?.release()
+        aacEncoder = null
 
         aaEmulator?.destroy()
         aaEmulator = null

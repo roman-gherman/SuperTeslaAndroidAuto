@@ -94,6 +94,11 @@ class WebServer(
                     call.respondText(js, ContentType.Application.JavaScript)
                 }
 
+                get("/audio.js") {
+                    val js = readAsset("audio.js")
+                    call.respondText(js, ContentType.Application.JavaScript)
+                }
+
                 // Health & status
                 get("/health") {
                     call.respondText("ok", ContentType.Text.Plain)

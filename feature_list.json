@@ -4,10 +4,10 @@
   "lastUpdated": "2026-03-13",
   "summary": {
     "totalFeatures": 52,
-    "completed": 27,
+    "completed": 33,
     "inProgress": 0,
-    "planned": 25,
-    "completionPercent": 52
+    "planned": 19,
+    "completionPercent": 63
   },
   "phases": [
     {
@@ -324,7 +324,7 @@
     {
       "id": "phase5",
       "name": "Audio Streaming",
-      "status": "planned",
+      "status": "completed",
       "estimatedDays": 8,
       "planFile": "docs/phases/phase5_audio.md",
       "features": [
@@ -332,7 +332,7 @@
           "id": "F-5.1",
           "name": "Audio channel data handler",
           "description": "Parse AAP audio frames (header + PCM), support media/navigation/call streams, emit via SharedFlow",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-2.7"
@@ -342,7 +342,7 @@
           "id": "F-5.2",
           "name": "AAC encoder",
           "description": "Hardware MediaCodec AAC-LC encoder: 44100Hz stereo 128kbps, async callback pipeline",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-5.1"
@@ -352,7 +352,7 @@
           "id": "F-5.3",
           "name": "Audio-video fMP4 muxing",
           "description": "Add mp4a/esds audio track to init segment, interleave audio+video in media segments",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-5.2",
@@ -363,7 +363,7 @@
           "id": "F-5.4",
           "name": "Browser audio playback",
           "description": "Unmute on first touch, volume control overlay, handle autoplay policy",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-5.3",
@@ -374,7 +374,7 @@
           "id": "F-5.5",
           "name": "Audio focus management",
           "description": "Handle AAP audio focus requests, stream priority (call > nav > media), volume ducking",
-          "status": "planned",
+          "status": "completed",
           "priority": "medium",
           "dependencies": [
             "F-5.1"
@@ -384,7 +384,7 @@
           "id": "F-5.6",
           "name": "Bluetooth audio fallback",
           "description": "Route audio via A2DP when browser audio unavailable (MJPEG mode)",
-          "status": "planned",
+          "status": "completed",
           "priority": "low",
           "dependencies": [
             "F-5.1"
