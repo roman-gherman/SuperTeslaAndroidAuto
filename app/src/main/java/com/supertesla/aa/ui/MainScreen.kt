@@ -6,11 +6,16 @@ import android.net.VpnService
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import com.supertesla.aa.R
 import androidx.compose.runtime.*
@@ -56,20 +61,38 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Settings gear icon - top right
+            IconButton(
+                onClick = onSettings,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 52.dp, end = 16.dp)
+                    .size(48.dp)
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = TeslaGray,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 28.dp)
-                .padding(top = 48.dp, bottom = 24.dp),
+                .padding(top = 64.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Logo + Header
+            Spacer(Modifier.height(16.dp))
             Image(
                 painter = painterResource(R.drawable.logo),
                 contentDescription = "SuperTesla",
-                modifier = Modifier.size(80.dp)
+                modifier = Modifier.size(88.dp)
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = "SuperTesla",
                 style = MaterialTheme.typography.headlineLarge,
@@ -95,6 +118,43 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
 
             Spacer(Modifier.weight(1f))
 
+            // Loading state: show when transitioning (not Idle and not fully running/error)
+            val isLoading = appState is AppState.StartingHotspot ||
+                    appState is AppState.StartingVpn ||
+                    appState is AppState.StartingServer ||
+                    appState is AppState.ConnectingAA
+
+            if (isLoading) {
+                val infiniteTransition = rememberInfiniteTransition(label = "loading")
+                val rotation by infiniteTransition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "spin"
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = TeslaBlue,
+                    strokeWidth = 4.dp
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = when (appState) {
+                        is AppState.StartingHotspot -> "Waiting for hotspot..."
+                        is AppState.StartingVpn -> "Setting up network..."
+                        is AppState.StartingServer -> "Starting server..."
+                        is AppState.ConnectingAA -> "Connecting to Android Auto..."
+                        else -> "Loading..."
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = TeslaGray
+                )
+                Spacer(Modifier.height(20.dp))
+            }
+
             // Big START / STOP button
             Button(
                 onClick = {
@@ -111,34 +171,34 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                         }
                     }
                 },
+                enabled = !isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(72.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (appState.isRunning) TeslaRed else TeslaBlue
+                    containerColor = if (appState.isRunning) TeslaRed else TeslaBlue,
+                    disabledContainerColor = TeslaSurfaceVariant
                 )
             ) {
-                Text(
-                    text = if (appState.isRunning) "STOP" else "START",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = if (appState.isRunning) TeslaWhite else TeslaDark
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        color = TeslaGray,
+                        strokeWidth = 3.dp
+                    )
+                } else {
+                    Text(
+                        text = if (appState.isRunning) "STOP" else "START",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = if (appState.isRunning) TeslaWhite else TeslaDark
+                    )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            TextButton(
-                onClick = onSettings,
-                modifier = Modifier.height(48.dp)
-            ) {
-                Text(
-                    "Settings",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TeslaGray
-                )
-            }
+            Spacer(Modifier.height(24.dp))
         }
+        } // close Box
     }
 }
 
