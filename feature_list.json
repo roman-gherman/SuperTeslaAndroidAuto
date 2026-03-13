@@ -4,10 +4,10 @@
   "lastUpdated": "2026-03-13",
   "summary": {
     "totalFeatures": 52,
-    "completed": 16,
+    "completed": 22,
     "inProgress": 0,
-    "planned": 36,
-    "completionPercent": 31
+    "planned": 30,
+    "completionPercent": 42
   },
   "phases": [
     {
@@ -192,7 +192,7 @@
     {
       "id": "phase3",
       "name": "Video Streaming to Browser",
-      "status": "planned",
+      "status": "completed",
       "estimatedDays": 11,
       "planFile": "docs/phases/phase3_video_streaming.md",
       "features": [
@@ -200,7 +200,7 @@
           "id": "F-3.1",
           "name": "H.264 NAL unit parser",
           "description": "Parse Annex B byte stream into typed NAL units (SPS/PPS/IDR/P-frame), streaming mode support",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-2.6"
@@ -210,7 +210,7 @@
           "id": "F-3.2",
           "name": "Fragmented MP4 muxer",
           "description": "Minimal ISO BMFF writer: ftyp + moov (avc1/avcC) init segment, moof+mdat media segments, Annex B to AVCC conversion",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-3.1"
@@ -220,7 +220,7 @@
           "id": "F-3.3",
           "name": "MSE WebSocket streaming",
           "description": "Stream fMP4 init + media segments as WebSocket binary frames to Tesla browser",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-3.2",
@@ -231,7 +231,7 @@
           "id": "F-3.4",
           "name": "MJPEG fallback stream",
           "description": "Decode H.264 to Bitmap, encode JPEG, serve as multipart HTTP stream at /stream.mjpeg",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-3.1"
@@ -241,7 +241,7 @@
           "id": "F-3.5",
           "name": "Web frontend video player",
           "description": "JavaScript MSE player with capability detection, buffer management, live edge tracking, MJPEG fallback",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-3.3"
@@ -251,7 +251,7 @@
           "id": "F-3.6",
           "name": "Tesla-optimized web layout",
           "description": "Fullscreen black layout, no scroll/zoom, status indicator, touch overlay div",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-3.5"

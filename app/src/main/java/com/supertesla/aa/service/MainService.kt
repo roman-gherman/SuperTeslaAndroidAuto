@@ -20,8 +20,10 @@ import com.supertesla.aa.core.model.AppStateManager
 import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.network.hotspot.HotspotManager
 import com.supertesla.aa.network.vpn.VpnTunnelService
+import com.supertesla.aa.network.webserver.VideoStreamHandler
 import com.supertesla.aa.network.webserver.WebServer
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -113,8 +115,10 @@ class MainService : Service() {
                 appStateManager.transition(AppState.StartingServer)
                 updateNotification("Starting server...")
 
-                webServer = WebServer(assets, AppConfig.SERVER_PORT)
-                webServer?.start()
+                val server = WebServer(assets, AppConfig.SERVER_PORT)
+                server.videoStreamHandler = VideoStreamHandler(1280, 720, 30)
+                webServer = server
+                server.start()
 
                 val serverUrl = AppConfig.getServerUrl()
                 appStateManager.transition(AppState.ServerRunning(serverUrl))
@@ -163,6 +167,13 @@ class MainService : Service() {
                 launch(Dispatchers.IO) {
                     try {
                         emulator.connect()
+                        // Wire video flow from AA emulator to web server
+                        val videoHandler = emulator.videoHandler
+                        if (videoHandler != null) {
+                            val videoDataFlow = videoHandler.videoFrames.map { it.data }
+                            webServer?.videoFlow = videoDataFlow
+                            Timber.i("Video flow wired to web server")
+                        }
                     } catch (e: Exception) {
                         Timber.w(e, "AA connection failed (server may not be running)")
                         updateNotification("AA not available - $serverUrl")

@@ -32,6 +32,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":streaming"))
 
     implementation(libs.core.ktx)
     implementation(libs.coroutines.core)

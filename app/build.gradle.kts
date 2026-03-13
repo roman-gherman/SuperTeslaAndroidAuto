@@ -58,6 +58,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":network"))
     implementation(project(":androidauto"))
+    implementation(project(":streaming"))
     implementation(project(":web"))
 
     implementation(libs.core.ktx)

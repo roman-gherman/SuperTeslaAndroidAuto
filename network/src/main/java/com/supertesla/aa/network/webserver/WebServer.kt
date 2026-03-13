@@ -13,6 +13,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.response.respondOutputStream
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -20,15 +21,18 @@ import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.json.Json
 import timber.log.Timber
-import kotlin.time.Duration.Companion.seconds
 
 class WebServer(
     private val assetManager: AssetManager,
     private val port: Int = AppConfig.SERVER_PORT
 ) {
     private var server: ApplicationEngine? = null
+    var videoStreamHandler: VideoStreamHandler? = null
+    var videoFlow: Flow<ByteArray>? = null
 
     val isRunning: Boolean
         get() = server != null
@@ -61,6 +65,7 @@ class WebServer(
             }
 
             routing {
+                // Static assets
                 get("/") {
                     val html = readAsset("index.html")
                     call.respondText(html, ContentType.Text.Html)
@@ -76,33 +81,80 @@ class WebServer(
                     call.respondText(js, ContentType.Application.JavaScript)
                 }
 
+                get("/player.js") {
+                    val js = readAsset("player.js")
+                    call.respondText(js, ContentType.Application.JavaScript)
+                }
+
+                // Health & status
                 get("/health") {
                     call.respondText("ok", ContentType.Text.Plain)
                 }
 
                 get("/status") {
+                    val handler = videoStreamHandler
+                    val clients = handler?.connectedClients ?: 0
+                    val frames = handler?.totalFramesSent ?: 0
                     call.respondText(
-                        """{"status":"running","version":"0.1.0"}""",
+                        """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames}""",
                         ContentType.Application.Json
                     )
                 }
 
-                // WebSocket stub for Phase 4 (touch events)
+                // MJPEG fallback stream
+                get("/stream.mjpeg") {
+                    val flow = videoFlow
+                    if (flow == null) {
+                        call.respondText("Video not available", status = io.ktor.http.HttpStatusCode.ServiceUnavailable)
+                        return@get
+                    }
+                    call.respondOutputStream(
+                        ContentType.parse("multipart/x-mixed-replace; boundary=frame")
+                    ) {
+                        val mjpeg = com.supertesla.aa.streaming.video.MjpegStreamEncoder(
+                            width = 1280, height = 720, quality = 75
+                        )
+                        try {
+                            mjpeg.start(flow).collect { jpeg ->
+                                write("--frame\r\n".toByteArray())
+                                write("Content-Type: image/jpeg\r\n".toByteArray())
+                                write("Content-Length: ${jpeg.size}\r\n\r\n".toByteArray())
+                                write(jpeg)
+                                write("\r\n".toByteArray())
+                                flush()
+                            }
+                        } finally {
+                            mjpeg.stop()
+                        }
+                    }
+                }
+
+                // WebSocket for video streaming (MSE fMP4) and touch events
                 webSocket("/ws") {
                     Timber.d("WebSocket client connected")
-                    try {
-                        for (frame in incoming) {
-                            when (frame) {
-                                is Frame.Text -> {
-                                    val text = frame.readText()
-                                    Timber.d("WS received: $text")
+                    val handler = videoStreamHandler
+                    val flow = videoFlow
+
+                    if (handler != null && flow != null) {
+                        // Stream video to this client
+                        handler.handleClient(this, flow)
+                    } else {
+                        // No video yet - keep connection open for touch events
+                        handler?.sendWaitingMessage(this)
+                        try {
+                            for (frame in incoming) {
+                                when (frame) {
+                                    is Frame.Text -> {
+                                        val text = frame.readText()
+                                        Timber.d("WS received: $text")
+                                    }
+                                    is Frame.Close -> break
+                                    else -> {}
                                 }
-                                is Frame.Close -> break
-                                else -> {}
                             }
+                        } finally {
+                            Timber.d("WebSocket client disconnected")
                         }
-                    } finally {
-                        Timber.d("WebSocket client disconnected")
                     }
                 }
             }
