@@ -26,6 +26,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.supertesla.aa.core.config.AppConfig
+import com.supertesla.aa.core.model.HotspotState
+import com.supertesla.aa.network.hotspot.HotspotManager
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 private const val PAGE_COUNT = 3
@@ -36,9 +39,24 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    val hotspotManager = remember { HotspotManager(context) }
+    var hotspotOn by remember { mutableStateOf(false) }
+
     // Try to start AA head unit server silently on launch
     LaunchedEffect(Unit) {
         tryStartHeadUnitServer(context)
+    }
+
+    // Observe hotspot state
+    LaunchedEffect(Unit) {
+        hotspotManager.observeHotspotState().collectLatest { state ->
+            val wasOff = !hotspotOn
+            hotspotOn = state is HotspotState.Enabled || state is HotspotState.ClientConnected
+            // Auto-advance from hotspot page when it turns on
+            if (hotspotOn && wasOff && pagerState.currentPage == 1) {
+                pagerState.animateScrollToPage(2)
+            }
+        }
     }
 
     // VPN permission handling - requested inline when user taps Start
@@ -82,7 +100,7 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
             ) { page ->
                 when (page) {
                     0 -> WelcomePage()
-                    1 -> HotspotPage(context)
+                    1 -> HotspotPage(context, hotspotOn)
                     2 -> ConnectTeslaPage()
                 }
             }
@@ -143,19 +161,34 @@ private fun WelcomePage() {
 }
 
 @Composable
-private fun HotspotPage(context: android.content.Context) {
+private fun HotspotPage(context: android.content.Context, hotspotOn: Boolean) {
     WizardPage(
-        title = "Turn On Hotspot",
+        title = if (hotspotOn) "Hotspot Is On" else "Turn On Hotspot",
         subtitle = "Your Tesla connects through it",
-        description = "Enable your phone's WiFi hotspot,\n" +
-                "then connect your Tesla's WiFi to it."
+        description = if (hotspotOn)
+            "Hotspot is active.\nNow connect your Tesla's WiFi to it."
+        else
+            "Enable your phone's WiFi hotspot,\nthen connect your Tesla's WiFi to it."
     ) {
         Spacer(Modifier.height(24.dp))
-        OutlinedButton(onClick = {
-            context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
-        }) { Text("Open WiFi Settings") }
+        if (hotspotOn) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF4CAF50))
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Hotspot active", color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+            }
+        } else {
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                })
+            }) { Text("Open WiFi Settings") }
+        }
     }
 }
 
