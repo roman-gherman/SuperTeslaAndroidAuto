@@ -43,9 +43,17 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
     var hotspotOn by remember { mutableStateOf(false) }
     var hotspotAutoAdvanced by remember { mutableStateOf(false) }
 
-    // Try to start AA head unit server silently on launch
+    // Request Bluetooth permission for Tesla detection (Android 12+)
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted or not, continue silently */ }
+
+    // Try to start AA head unit server and request BT permission silently on launch
     LaunchedEffect(Unit) {
         tryStartHeadUnitServer(context)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            btPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        }
     }
 
     // Observe hotspot state
