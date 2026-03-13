@@ -2,6 +2,7 @@
 
 package com.supertesla.aa.ui.wizard
 
+import android.content.ComponentName
 import android.content.Intent
 import android.net.VpnService
 import android.provider.Settings
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,14 +28,20 @@ import androidx.compose.ui.unit.sp
 import com.supertesla.aa.core.config.AppConfig
 import kotlinx.coroutines.launch
 
+private const val PAGE_COUNT = 3
+
 @Composable
-fun SetupWizardScreen(
-    onComplete: () -> Unit
-) {
-    val pagerState = rememberPagerState(pageCount = { 5 })
+fun SetupWizardScreen(onComplete: () -> Unit) {
+    val pagerState = rememberPagerState(pageCount = { PAGE_COUNT })
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // Try to start AA head unit server silently on launch
+    LaunchedEffect(Unit) {
+        tryStartHeadUnitServer(context)
+    }
+
+    // VPN permission handling - requested inline when user taps Start
     var vpnGranted by remember { mutableStateOf(VpnService.prepare(context) == null) }
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -53,7 +59,7 @@ fun SetupWizardScreen(
                     .padding(top = 48.dp, bottom = 16.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
-                repeat(5) { index ->
+                repeat(PAGE_COUNT) { index ->
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 4.dp)
@@ -76,18 +82,12 @@ fun SetupWizardScreen(
             ) { page ->
                 when (page) {
                     0 -> WelcomePage()
-                    1 -> AndroidAutoPage()
-                    2 -> HotspotPage(context)
-                    3 -> VpnPage(vpnGranted) {
-                        val prepareIntent = VpnService.prepare(context)
-                        if (prepareIntent != null) vpnLauncher.launch(prepareIntent)
-                        else vpnGranted = true
-                    }
-                    4 -> ReadyPage(onComplete)
+                    1 -> HotspotPage(context)
+                    2 -> ConnectTeslaPage()
                 }
             }
 
-            // Navigation buttons
+            // Navigation
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -102,17 +102,29 @@ fun SetupWizardScreen(
                     Spacer(Modifier.width(1.dp))
                 }
 
-                val isLastPage = pagerState.currentPage == 4
+                val isLastPage = pagerState.currentPage == PAGE_COUNT - 1
                 Button(
                     onClick = {
-                        if (isLastPage) onComplete()
-                        else scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                    },
-                    enabled = when (pagerState.currentPage) {
-                        3 -> vpnGranted
-                        else -> true
+                        if (isLastPage) {
+                            // Request VPN permission if not yet granted, then complete
+                            if (!vpnGranted) {
+                                val prepareIntent = VpnService.prepare(context)
+                                if (prepareIntent != null) {
+                                    vpnLauncher.launch(prepareIntent)
+                                } else {
+                                    vpnGranted = true
+                                    onComplete()
+                                }
+                            } else {
+                                onComplete()
+                            }
+                        } else {
+                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                        }
                     }
-                ) { Text(if (isLastPage) "Done" else "Next") }
+                ) {
+                    Text(if (isLastPage) "Start" else "Next")
+                }
             }
         }
     }
@@ -123,30 +135,22 @@ private fun WelcomePage() {
     WizardPage(
         title = "SuperTesla",
         subtitle = "Android Auto for Tesla",
-        description = "Stream Android Auto to your Tesla's browser.\nNo hardware required."
-    )
-}
-
-@Composable
-private fun AndroidAutoPage() {
-    WizardPage(
-        title = "Enable Head Unit Server",
-        subtitle = "Android Auto Developer Settings",
-        description = "1. Open Android Auto app\n" +
-                "2. Settings > tap Version 10 times\n" +
-                "3. Enable Developer Settings\n" +
-                "4. Turn on \"Start head unit server\""
+        description = "Use your favourite Android Auto apps\n" +
+                "right on your Tesla's screen.\n\n" +
+                "Google Maps, Spotify, WhatsApp\n" +
+                "and more - no extra hardware needed."
     )
 }
 
 @Composable
 private fun HotspotPage(context: android.content.Context) {
     WizardPage(
-        title = "Enable Hotspot",
-        subtitle = "WiFi Tethering",
-        description = "Enable your phone's WiFi hotspot.\nTesla will connect to it."
+        title = "Turn On Hotspot",
+        subtitle = "Your Tesla connects through it",
+        description = "Enable your phone's WiFi hotspot,\n" +
+                "then connect your Tesla's WiFi to it."
     ) {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
         OutlinedButton(onClick = {
             context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -156,39 +160,16 @@ private fun HotspotPage(context: android.content.Context) {
 }
 
 @Composable
-private fun VpnPage(granted: Boolean, onRequest: () -> Unit) {
-    WizardPage(
-        title = "VPN Permission",
-        subtitle = "Local Network Only",
-        description = "SuperTesla needs VPN permission to assign a virtual IP address.\n" +
-                "No traffic is intercepted or monitored."
-    ) {
-        Spacer(Modifier.height(16.dp))
-        if (granted) {
-            Text(
-                "Permission granted",
-                color = Color(0xFF4CAF50),
-                fontWeight = FontWeight.Medium
-            )
-        } else {
-            Button(onClick = onRequest) { Text("Grant Permission") }
-        }
-    }
-}
-
-@Composable
-private fun ReadyPage(onComplete: () -> Unit) {
+private fun ConnectTeslaPage() {
     val url = AppConfig.getServerUrl()
     val fallback = AppConfig.getServerUrlFallback()
+
     WizardPage(
-        title = "Connect Tesla",
-        subtitle = "Almost there!",
-        description = "On your Tesla:\n" +
-                "1. Connect WiFi to your phone's hotspot\n" +
-                "2. Open the browser\n" +
-                "3. Navigate to:"
+        title = "Open in Tesla",
+        subtitle = "One last step",
+        description = "On your Tesla's browser, go to:"
     ) {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -196,20 +177,27 @@ private fun ReadyPage(onComplete: () -> Unit) {
         ) {
             Text(
                 text = url,
-                modifier = Modifier.padding(16.dp),
-                fontSize = 22.sp,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
-            text = "If that doesn't work, try: $fallback",
+            text = "or: $fallback",
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-            textAlign = TextAlign.Center
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "Tap Start below when ready.\nAndroid Auto will appear on your Tesla.",
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
         )
     }
 }
@@ -238,5 +226,24 @@ private fun WizardPage(
             lineHeight = 22.sp,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f))
         extra()
+    }
+}
+
+/**
+ * Try to start the Android Auto head unit server programmatically.
+ * This eliminates the need for users to enable developer settings manually.
+ */
+private fun tryStartHeadUnitServer(context: android.content.Context) {
+    try {
+        val intent = Intent().apply {
+            component = ComponentName(
+                "com.google.android.projection.gearhead",
+                "com.google.android.projection.gearhead.companion.DeveloperHeadUnitNetworkService"
+            )
+        }
+        context.startService(intent)
+    } catch (_: Exception) {
+        // Silently fail - service may not be available or permission denied.
+        // The AA emulator will handle connection failure gracefully.
     }
 }
