@@ -1,0 +1,461 @@
+{
+  "project": "SuperTeslaAndroidAuto",
+  "version": "0.0.1",
+  "lastUpdated": "2026-03-13",
+  "summary": {
+    "totalFeatures": 52,
+    "completed": 7,
+    "inProgress": 0,
+    "planned": 45,
+    "completionPercent": 13
+  },
+  "phases": [
+    {
+      "id": "phase1",
+      "name": "Foundation",
+      "status": "completed",
+      "estimatedDays": 7,
+      "planFile": "docs/phases/phase1_foundation.md",
+      "features": [
+        {
+          "id": "F-1.1",
+          "name": "Multi-module Gradle project",
+          "description": "Kotlin DSL multi-module project with version catalog (:app, :core, :network, :androidauto, :streaming, :web)",
+          "status": "completed",
+          "priority": "critical",
+          "dependencies": []
+        },
+        {
+          "id": "F-1.2",
+          "name": "App state machine",
+          "description": "Sealed class state machine with StateFlow (Idle -> HotspotReady -> VpnReady -> ServerRunning -> Streaming)",
+          "status": "completed",
+          "priority": "critical",
+          "dependencies": ["F-1.1"]
+        },
+        {
+          "id": "F-1.3",
+          "name": "VPN tunnel service",
+          "description": "VpnService assigning virtual IP 240.3.3.3 via TUN interface to bypass Tesla private IP blocking",
+          "status": "completed",
+          "priority": "critical",
+          "dependencies": ["F-1.1"]
+        },
+        {
+          "id": "F-1.4",
+          "name": "Hotspot manager",
+          "description": "Detect hotspot state, monitor connected clients via ARP table polling, emit reactive Flow",
+          "status": "completed",
+          "priority": "high",
+          "dependencies": ["F-1.1"]
+        },
+        {
+          "id": "F-1.5",
+          "name": "Ktor embedded web server",
+          "description": "HTTP server on 240.3.3.3:8080 serving web frontend, health endpoint, WebSocket stub",
+          "status": "completed",
+          "priority": "critical",
+          "dependencies": ["F-1.3"]
+        },
+        {
+          "id": "F-1.6",
+          "name": "Main foreground service",
+          "description": "Foreground service orchestrating VPN + hotspot + server lifecycle with notification",
+          "status": "completed",
+          "priority": "critical",
+          "dependencies": ["F-1.3", "F-1.4", "F-1.5"]
+        },
+        {
+          "id": "F-1.7",
+          "name": "Phone dashboard UI",
+          "description": "Jetpack Compose UI with start/stop button, status indicators, URL display",
+          "status": "completed",
+          "priority": "high",
+          "dependencies": ["F-1.2", "F-1.6"]
+        }
+      ]
+    },
+    {
+      "id": "phase2",
+      "name": "Android Auto Protocol",
+      "status": "planned",
+      "estimatedDays": 11,
+      "planFile": "docs/phases/phase2_android_auto_protocol.md",
+      "features": [
+        {
+          "id": "F-2.1",
+          "name": "Protobuf message definitions",
+          "description": "AAP protobuf schemas: version, service discovery, channel open, video/audio config, input events",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-1.1"]
+        },
+        {
+          "id": "F-2.2",
+          "name": "AAP message framing",
+          "description": "Read/write AAP frames (channel + flags + length + payload), multi-frame reassembly",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.1"]
+        },
+        {
+          "id": "F-2.3",
+          "name": "TLS handshake layer",
+          "description": "SSLEngine-based TLS 1.2 within AAP framing, trust-all for local AA server",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.2"]
+        },
+        {
+          "id": "F-2.4",
+          "name": "Channel multiplexer",
+          "description": "Demux incoming frames to handlers, mux outgoing with thread-safe Mutex, support video/audio/input/sensor channels",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.3"]
+        },
+        {
+          "id": "F-2.5",
+          "name": "AA head unit emulator",
+          "description": "Connect to localhost:5277, version exchange, TLS, service discovery, channel negotiation, receive H.264 video",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.4"]
+        },
+        {
+          "id": "F-2.6",
+          "name": "Video channel handler",
+          "description": "Receive H.264 NAL units from AA video channel, emit to SharedFlow",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.5"]
+        },
+        {
+          "id": "F-2.7",
+          "name": "Audio channel handler",
+          "description": "Receive PCM audio data from AA audio channels, emit to SharedFlow",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-2.5"]
+        },
+        {
+          "id": "F-2.8",
+          "name": "Local video validation",
+          "description": "Decode H.264 via MediaCodec and display AA UI on phone SurfaceView for debugging",
+          "status": "planned",
+          "priority": "medium",
+          "dependencies": ["F-2.6"]
+        },
+        {
+          "id": "F-2.9",
+          "name": "Keepalive (PING/PONG)",
+          "description": "AAP ping request/response to maintain connection",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-2.5"]
+        }
+      ]
+    },
+    {
+      "id": "phase3",
+      "name": "Video Streaming to Browser",
+      "status": "planned",
+      "estimatedDays": 11,
+      "planFile": "docs/phases/phase3_video_streaming.md",
+      "features": [
+        {
+          "id": "F-3.1",
+          "name": "H.264 NAL unit parser",
+          "description": "Parse Annex B byte stream into typed NAL units (SPS/PPS/IDR/P-frame), streaming mode support",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.6"]
+        },
+        {
+          "id": "F-3.2",
+          "name": "Fragmented MP4 muxer",
+          "description": "Minimal ISO BMFF writer: ftyp + moov (avc1/avcC) init segment, moof+mdat media segments, Annex B to AVCC conversion",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-3.1"]
+        },
+        {
+          "id": "F-3.3",
+          "name": "MSE WebSocket streaming",
+          "description": "Stream fMP4 init + media segments as WebSocket binary frames to Tesla browser",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-3.2", "F-1.5"]
+        },
+        {
+          "id": "F-3.4",
+          "name": "MJPEG fallback stream",
+          "description": "Decode H.264 to Bitmap, encode JPEG, serve as multipart HTTP stream at /stream.mjpeg",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-3.1"]
+        },
+        {
+          "id": "F-3.5",
+          "name": "Web frontend video player",
+          "description": "JavaScript MSE player with capability detection, buffer management, live edge tracking, MJPEG fallback",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-3.3"]
+        },
+        {
+          "id": "F-3.6",
+          "name": "Tesla-optimized web layout",
+          "description": "Fullscreen black layout, no scroll/zoom, status indicator, touch overlay div",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-3.5"]
+        }
+      ]
+    },
+    {
+      "id": "phase4",
+      "name": "Touch Input",
+      "status": "planned",
+      "estimatedDays": 5,
+      "planFile": "docs/phases/phase4_touch_input.md",
+      "features": [
+        {
+          "id": "F-4.1",
+          "name": "Browser touch capture",
+          "description": "Pointer Events on overlay div, coordinate normalization (0-1), multi-touch, gesture prevention, move throttling",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-3.6"]
+        },
+        {
+          "id": "F-4.2",
+          "name": "Touch event relay server",
+          "description": "WebSocket JSON deserialization, coordinate transform (normalized -> AA pixels), AAP InputEvent protobuf generation",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-4.1", "F-2.1"]
+        },
+        {
+          "id": "F-4.3",
+          "name": "Unified bidirectional WebSocket",
+          "description": "Single /ws endpoint: server sends binary video, client sends text touch events",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-3.3", "F-4.2"]
+        },
+        {
+          "id": "F-4.4",
+          "name": "AAP input channel integration",
+          "description": "Forward touch events from relay to AA via encrypted input channel",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-4.2", "F-2.5"]
+        },
+        {
+          "id": "F-4.5",
+          "name": "Advanced touch gestures",
+          "description": "Long press, drag/swipe, two-finger pinch-to-zoom, scroll wheel support",
+          "status": "planned",
+          "priority": "medium",
+          "dependencies": ["F-4.4"]
+        }
+      ]
+    },
+    {
+      "id": "phase5",
+      "name": "Audio Streaming",
+      "status": "planned",
+      "estimatedDays": 8,
+      "planFile": "docs/phases/phase5_audio.md",
+      "features": [
+        {
+          "id": "F-5.1",
+          "name": "Audio channel data handler",
+          "description": "Parse AAP audio frames (header + PCM), support media/navigation/call streams, emit via SharedFlow",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-2.7"]
+        },
+        {
+          "id": "F-5.2",
+          "name": "AAC encoder",
+          "description": "Hardware MediaCodec AAC-LC encoder: 44100Hz stereo 128kbps, async callback pipeline",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-5.1"]
+        },
+        {
+          "id": "F-5.3",
+          "name": "Audio-video fMP4 muxing",
+          "description": "Add mp4a/esds audio track to init segment, interleave audio+video in media segments",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-5.2", "F-3.2"]
+        },
+        {
+          "id": "F-5.4",
+          "name": "Browser audio playback",
+          "description": "Unmute on first touch, volume control overlay, handle autoplay policy",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-5.3", "F-3.5"]
+        },
+        {
+          "id": "F-5.5",
+          "name": "Audio focus management",
+          "description": "Handle AAP audio focus requests, stream priority (call > nav > media), volume ducking",
+          "status": "planned",
+          "priority": "medium",
+          "dependencies": ["F-5.1"]
+        },
+        {
+          "id": "F-5.6",
+          "name": "Bluetooth audio fallback",
+          "description": "Route audio via A2DP when browser audio unavailable (MJPEG mode)",
+          "status": "planned",
+          "priority": "low",
+          "dependencies": ["F-5.1"]
+        }
+      ]
+    },
+    {
+      "id": "phase6",
+      "name": "WebRTC Streaming",
+      "status": "planned",
+      "estimatedDays": 12,
+      "planFile": "docs/phases/phase6_webrtc.md",
+      "features": [
+        {
+          "id": "F-6.1",
+          "name": "WebRTC SDK integration",
+          "description": "Google WebRTC Android SDK, PeerConnectionFactory with H.264 hardware encoder support",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-1.1"]
+        },
+        {
+          "id": "F-6.2",
+          "name": "H.264 passthrough video source",
+          "description": "Custom VideoEncoder feeding pre-encoded AA H.264 NAL units into WebRTC, fallback decode+re-encode",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-6.1", "F-3.1"]
+        },
+        {
+          "id": "F-6.3",
+          "name": "WebRTC audio source",
+          "description": "Custom AudioDeviceModule feeding AA PCM into WebRTC Opus encoder, disable audio processing",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-6.1", "F-5.1"]
+        },
+        {
+          "id": "F-6.4",
+          "name": "WebRTC signaling server",
+          "description": "HTTP endpoints for SDP offer/answer exchange and ICE candidate exchange",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-6.1", "F-1.5"]
+        },
+        {
+          "id": "F-6.5",
+          "name": "WebRTC data channel for touch",
+          "description": "Replace WebSocket touch events with SCTP DataChannel for lower latency",
+          "status": "planned",
+          "priority": "medium",
+          "dependencies": ["F-6.4", "F-4.2"]
+        },
+        {
+          "id": "F-6.6",
+          "name": "Browser WebRTC client",
+          "description": "RTCPeerConnection setup, SDP exchange, track handling, fallback chain (WebRTC -> MSE -> MJPEG)",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-6.4", "F-3.5"]
+        }
+      ]
+    },
+    {
+      "id": "phase7",
+      "name": "Polish & Production",
+      "status": "planned",
+      "estimatedDays": 16,
+      "planFile": "docs/phases/phase7_polish.md",
+      "features": [
+        {
+          "id": "F-7.1",
+          "name": "Setup wizard",
+          "description": "6-step guided setup: AA config, hotspot, VPN permission, Tesla connection, QR code URL display",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-1.7"]
+        },
+        {
+          "id": "F-7.2",
+          "name": "Auto-reconnection",
+          "description": "Exponential backoff retry for all connections: WebSocket, AA emulator, VPN; handle browser refresh, WiFi blips",
+          "status": "planned",
+          "priority": "critical",
+          "dependencies": ["F-1.6"]
+        },
+        {
+          "id": "F-7.3",
+          "name": "Adaptive bitrate",
+          "description": "Dynamic quality adjustment based on RTT, dropped frames, buffer level; 5 quality levels",
+          "status": "planned",
+          "priority": "medium",
+          "dependencies": ["F-3.3"]
+        },
+        {
+          "id": "F-7.4",
+          "name": "Battery optimization",
+          "description": "Wake lock, WiFi lock, battery monitoring, quality reduction on battery, USB charge detection",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-1.6"]
+        },
+        {
+          "id": "F-7.5",
+          "name": "Error handling & messaging",
+          "description": "User-friendly error messages with recovery actions for all failure scenarios",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-1.2"]
+        },
+        {
+          "id": "F-7.6",
+          "name": "Settings screen",
+          "description": "Video (resolution, FPS, mode), audio, network (IP, port), advanced (logs, debug) settings with DataStore",
+          "status": "planned",
+          "priority": "medium",
+          "dependencies": ["F-1.7"]
+        },
+        {
+          "id": "F-7.7",
+          "name": "Web diagnostics panel",
+          "description": "Browser-accessible /debug page: connection status, video/audio stats, touch log, memory, battery",
+          "status": "planned",
+          "priority": "low",
+          "dependencies": ["F-1.5"]
+        },
+        {
+          "id": "F-7.8",
+          "name": "Multi-Android version compatibility",
+          "description": "Test and fix for Android 8.0 through 15, handle version-specific APIs and permissions",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": []
+        },
+        {
+          "id": "F-7.9",
+          "name": "Tesla firmware compatibility",
+          "description": "Test MCU2 (Intel) and MCU3 (AMD), verify codec support, tune defaults per hardware",
+          "status": "planned",
+          "priority": "high",
+          "dependencies": ["F-3.5", "F-6.6"]
+        }
+      ]
+    }
+  ]
+}

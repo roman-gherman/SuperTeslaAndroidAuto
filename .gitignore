@@ -1,0 +1,29 @@
+## Android
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/core/build/
+/network/build/
+/androidauto/build/
+/streaming/build/
+/web/build/
+/captures
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+*.aab
+
+## Gradle
+gradle-wrapper.jar
+
+## Claude
+.claude/
+
+## Misc
+*.log
+*.tmp
