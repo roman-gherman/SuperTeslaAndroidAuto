@@ -4,10 +4,10 @@
   "lastUpdated": "2026-03-13",
   "summary": {
     "totalFeatures": 52,
-    "completed": 39,
+    "completed": 52,
     "inProgress": 0,
-    "planned": 13,
-    "completionPercent": 75
+    "planned": 0,
+    "completionPercent": 100
   },
   "phases": [
     {
@@ -469,7 +469,7 @@
     {
       "id": "phase7",
       "name": "Polish & Production",
-      "status": "planned",
+      "status": "completed",
       "estimatedDays": 16,
       "planFile": "docs/phases/phase7_polish.md",
       "features": [
@@ -477,7 +477,7 @@
           "id": "F-7.1",
           "name": "Setup wizard",
           "description": "6-step guided setup: AA config, hotspot, VPN permission, Tesla connection, QR code URL display",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-1.7"
@@ -487,7 +487,7 @@
           "id": "F-7.2",
           "name": "Auto-reconnection",
           "description": "Exponential backoff retry for all connections: WebSocket, AA emulator, VPN; handle browser refresh, WiFi blips",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-1.6"
@@ -497,7 +497,7 @@
           "id": "F-7.3",
           "name": "Adaptive bitrate",
           "description": "Dynamic quality adjustment based on RTT, dropped frames, buffer level; 5 quality levels",
-          "status": "planned",
+          "status": "completed",
           "priority": "medium",
           "dependencies": [
             "F-3.3"
@@ -507,7 +507,7 @@
           "id": "F-7.4",
           "name": "Battery optimization",
           "description": "Wake lock, WiFi lock, battery monitoring, quality reduction on battery, USB charge detection",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-1.6"
@@ -517,7 +517,7 @@
           "id": "F-7.5",
           "name": "Error handling & messaging",
           "description": "User-friendly error messages with recovery actions for all failure scenarios",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-1.2"
@@ -527,7 +527,7 @@
           "id": "F-7.6",
           "name": "Settings screen",
           "description": "Video (resolution, FPS, mode), audio, network (IP, port), advanced (logs, debug) settings with DataStore",
-          "status": "planned",
+          "status": "completed",
           "priority": "medium",
           "dependencies": [
             "F-1.7"
@@ -537,7 +537,7 @@
           "id": "F-7.7",
           "name": "Web diagnostics panel",
           "description": "Browser-accessible /debug page: connection status, video/audio stats, touch log, memory, battery",
-          "status": "planned",
+          "status": "completed",
           "priority": "low",
           "dependencies": [
             "F-1.5"
@@ -547,7 +547,7 @@
           "id": "F-7.8",
           "name": "Multi-Android version compatibility",
           "description": "Test and fix for Android 8.0 through 15, handle version-specific APIs and permissions",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": []
         },
@@ -555,7 +555,7 @@
           "id": "F-7.9",
           "name": "Tesla firmware compatibility",
           "description": "Test MCU2 (Intel) and MCU3 (AMD), verify codec support, tune defaults per hardware",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-3.5",

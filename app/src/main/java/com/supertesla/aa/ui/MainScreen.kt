@@ -27,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +51,7 @@ import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.service.MainService
 
 @Composable
-fun MainScreen(viewModel: MainViewModel) {
+fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
     val appState by viewModel.appState.collectAsStateWithLifecycle()
     val hotspotState by viewModel.hotspotState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -150,7 +151,12 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            // Settings link
+            TextButton(onClick = onSettings) {
+                Text("Settings", fontSize = 14.sp)
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

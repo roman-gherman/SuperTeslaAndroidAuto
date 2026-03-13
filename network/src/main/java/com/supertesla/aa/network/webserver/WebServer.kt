@@ -102,6 +102,11 @@ class WebServer(
                     call.respondText(js, ContentType.Application.JavaScript)
                 }
 
+                get("/debug") {
+                    val html = readAsset("debug.html")
+                    call.respondText(html, ContentType.Text.Html)
+                }
+
                 // Health & status
                 get("/health") {
                     call.respondText("ok", ContentType.Text.Plain)
