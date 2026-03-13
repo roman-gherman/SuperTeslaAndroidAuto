@@ -55,17 +55,16 @@ class HotspotManager(private val context: Context) {
     }
 
     /**
-     * Check if WiFi hotspot/tethering is active using multiple detection methods.
+     * Check if WiFi hotspot/tethering is active.
+     * Uses WifiManager reflection as the primary (most reliable) method.
+     * Falls back to interface detection only for dedicated AP interfaces.
      */
     private fun isHotspotEnabled(): Boolean {
-        // Method 1: WifiManager reflection (isWifiApEnabled) - works on most devices
+        // Method 1: WifiManager.isWifiApEnabled() - most reliable
         if (isWifiApEnabledViaReflection()) return true
 
-        // Method 2: Check for tethering interface names (ap0, wlan1, swlan0, etc.)
+        // Method 2: Check for dedicated AP interfaces only (NOT wlan0 which is regular WiFi)
         if (hasTetheringInterface()) return true
-
-        // Method 3: Check for hotspot-typical IP subnets on any interface
-        if (hasHotspotSubnet()) return true
 
         return false
     }
@@ -88,7 +87,8 @@ class HotspotManager(private val context: Context) {
      * Check for common tethering/AP interface names.
      */
     private fun hasTetheringInterface(): Boolean {
-        val apNames = setOf("ap0", "wlan1", "swlan0", "ap1", "softap0", "wlan0")
+        // Only dedicated AP interfaces - NOT wlan0 (regular WiFi)
+        val apNames = setOf("ap0", "wlan1", "swlan0", "ap1", "softap0")
         return try {
             NetworkInterface.getNetworkInterfaces()?.asSequence()?.any { iface ->
                 iface.isUp && !iface.isLoopback &&
@@ -100,31 +100,6 @@ class HotspotManager(private val context: Context) {
         }
     }
 
-    /**
-     * Check for common hotspot IP subnets on any interface.
-     * Different vendors use different subnets.
-     */
-    private fun hasHotspotSubnet(): Boolean {
-        val hotspotPrefixes = listOf(
-            "192.168.43.",   // Stock Android
-            "192.168.49.",   // Some Samsung devices
-            "192.168.2.",    // Some Huawei devices
-            "172.20.10.",    // Some devices
-            "10.0.0.",       // Some carriers/devices
-        )
-        return try {
-            NetworkInterface.getNetworkInterfaces()?.asSequence()?.any { iface ->
-                iface.isUp && !iface.isLoopback && iface.inetAddresses.asSequence().any { addr ->
-                    if (addr is Inet4Address) {
-                        val ip = addr.hostAddress ?: return@any false
-                        hotspotPrefixes.any { prefix -> ip.startsWith(prefix) }
-                    } else false
-                }
-            } ?: false
-        } catch (e: Exception) {
-            false
-        }
-    }
 
     /**
      * Parse /proc/net/arp to find connected clients.
