@@ -179,6 +179,7 @@ private fun VpnPage(granted: Boolean, onRequest: () -> Unit) {
 @Composable
 private fun ReadyPage(onComplete: () -> Unit) {
     val url = AppConfig.getServerUrl()
+    val fallback = AppConfig.getServerUrlFallback()
     WizardPage(
         title = "Connect Tesla",
         subtitle = "Almost there!",
@@ -203,6 +204,13 @@ private fun ReadyPage(onComplete: () -> Unit) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "If that doesn't work, try: $fallback",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+            textAlign = TextAlign.Center
+        )
     }
 }
 

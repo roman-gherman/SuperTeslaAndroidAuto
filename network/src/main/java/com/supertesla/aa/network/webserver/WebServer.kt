@@ -35,6 +35,7 @@ class WebServer(
     private val port: Int = AppConfig.SERVER_PORT
 ) {
     private var server: ApplicationEngine? = null
+    private var serverPort80: ApplicationEngine? = null
     var videoStreamHandler: VideoStreamHandler? = null
     var videoFlow: Flow<ByteArray>? = null
     var touchInputRelay: TouchInputRelay? = null
@@ -198,10 +199,31 @@ class WebServer(
         }.start(wait = false)
 
         Timber.i("Web server started on $bindAddress:$port")
+
+        // Also try binding port 80 for clean hostname URL (http://super.taa)
+        try {
+            serverPort80 = embeddedServer(Netty, port = 80, host = bindAddress) {
+                install(io.ktor.server.routing.Routing) {
+                    // Redirect all requests to the main server port
+                    get("{...}") {
+                        val path = call.request.local.uri
+                        call.respondText(
+                            """<html><head><meta http-equiv="refresh" content="0;url=http://${AppConfig.HOSTNAME}:$port$path"></head></html>""",
+                            ContentType.Text.Html
+                        )
+                    }
+                }
+            }.start(wait = false)
+            Timber.i("Port 80 redirect server started")
+        } catch (e: Exception) {
+            Timber.d("Port 80 not available (expected on most devices): ${e.message}")
+        }
     }
 
     fun stop() {
         Timber.i("Stopping web server")
+        serverPort80?.stop(500, 1000)
+        serverPort80 = null
         server?.stop(1000, 2000)
         server = null
     }

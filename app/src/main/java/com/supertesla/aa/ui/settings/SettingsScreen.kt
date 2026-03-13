@@ -90,7 +90,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             // About Section
             SectionHeader("About")
             InfoSetting("Version", "0.1.0")
-            InfoSetting("Server URL", "${AppConfig.getServerUrl(virtualIp)}")
+            InfoSetting("Hostname URL", AppConfig.getServerUrl())
+            InfoSetting("Fallback URL", "http://$virtualIp:${AppConfig.SERVER_PORT}")
 
             Spacer(Modifier.height(32.dp))
         }

@@ -16,6 +16,7 @@ import com.supertesla.aa.androidauto.headunit.AAHeadUnitEmulator
 import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
+import com.supertesla.aa.network.dns.LocalDnsServer
 import com.supertesla.aa.core.model.AppStateManager
 import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.network.hotspot.HotspotManager
@@ -45,6 +46,7 @@ class MainService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var pipelineJob: Job? = null
     private var webServer: WebServer? = null
+    private var dnsServer: LocalDnsServer? = null
     private var aaEmulator: AAHeadUnitEmulator? = null
     private var aacEncoder: AacEncoder? = null
     private var vpnBound = false
@@ -113,6 +115,15 @@ class MainService : Service() {
                 startService(vpnIntent)
                 appStateManager.transition(AppState.VpnReady(AppConfig.DEFAULT_VIRTUAL_IP))
                 Timber.i("VPN service started with IP: ${AppConfig.DEFAULT_VIRTUAL_IP}")
+
+                // Step 2b: Start local DNS server (resolves super.taa -> 240.3.3.3)
+                val dns = LocalDnsServer(
+                    hostname = AppConfig.HOSTNAME,
+                    virtualIp = AppConfig.DEFAULT_VIRTUAL_IP
+                )
+                dnsServer = dns
+                dns.start()
+                Timber.i("DNS server started: ${AppConfig.HOSTNAME} -> ${AppConfig.DEFAULT_VIRTUAL_IP}")
 
                 // Step 3: Start web server
                 appStateManager.transition(AppState.StartingServer)
@@ -232,6 +243,9 @@ class MainService : Service() {
 
         webServer?.stop()
         webServer = null
+
+        dnsServer?.stop()
+        dnsServer = null
 
         stopService(Intent(this, VpnTunnelService::class.java))
 
