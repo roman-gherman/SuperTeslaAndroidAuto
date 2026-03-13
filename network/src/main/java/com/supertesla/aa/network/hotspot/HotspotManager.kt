@@ -1,6 +1,7 @@
 package com.supertesla.aa.network.hotspot
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.ConnectedClient
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.flow
 import timber.log.Timber
 import java.io.BufferedReader
 import java.io.FileReader
+import java.lang.reflect.Method
 import java.net.Inet4Address
 import java.net.NetworkInterface
 
@@ -21,10 +23,6 @@ class HotspotManager(private val context: Context) {
         context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     }
 
-    /**
-     * Observe hotspot state by polling network interfaces and ARP table.
-     * Emits [HotspotState] changes.
-     */
     fun observeHotspotState(): Flow<HotspotState> = flow {
         while (true) {
             val state = checkHotspotState()
@@ -33,9 +31,6 @@ class HotspotManager(private val context: Context) {
         }
     }.distinctUntilChanged()
 
-    /**
-     * Observe connected clients by polling ARP table.
-     */
     fun observeConnectedClients(): Flow<List<ConnectedClient>> = flow {
         while (true) {
             val clients = readArpTable()
@@ -45,18 +40,9 @@ class HotspotManager(private val context: Context) {
     }.distinctUntilChanged()
 
     private fun checkHotspotState(): HotspotState {
-        // Check if hotspot interface exists (usually "wlan0" or "ap0" or "swlan0")
-        val hasHotspotInterface = try {
-            NetworkInterface.getNetworkInterfaces()?.asSequence()?.any { iface ->
-                iface.isUp && !iface.isLoopback && iface.inetAddresses.asSequence().any { addr ->
-                    addr is Inet4Address && addr.hostAddress?.startsWith("192.168.43.") == true
-                }
-            } ?: false
-        } catch (e: Exception) {
-            false
-        }
+        val hotspotEnabled = isHotspotEnabled()
 
-        if (!hasHotspotInterface) {
+        if (!hotspotEnabled) {
             return HotspotState.Disabled
         }
 
@@ -69,24 +55,95 @@ class HotspotManager(private val context: Context) {
     }
 
     /**
-     * Parse /proc/net/arp to find connected clients on the hotspot subnet.
-     * Format: IP address, HW type, Flags, HW address, Mask, Device
+     * Check if WiFi hotspot/tethering is active using multiple detection methods.
+     */
+    private fun isHotspotEnabled(): Boolean {
+        // Method 1: WifiManager reflection (isWifiApEnabled) - works on most devices
+        if (isWifiApEnabledViaReflection()) return true
+
+        // Method 2: Check for tethering interface names (ap0, wlan1, swlan0, etc.)
+        if (hasTetheringInterface()) return true
+
+        // Method 3: Check for hotspot-typical IP subnets on any interface
+        if (hasHotspotSubnet()) return true
+
+        return false
+    }
+
+    /**
+     * Use reflection to call WifiManager.isWifiApEnabled().
+     * This hidden API works on most Android versions.
+     */
+    private fun isWifiApEnabledViaReflection(): Boolean {
+        return try {
+            val method: Method = wifiManager.javaClass.getDeclaredMethod("isWifiApEnabled")
+            method.isAccessible = true
+            method.invoke(wifiManager) as Boolean
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Check for common tethering/AP interface names.
+     */
+    private fun hasTetheringInterface(): Boolean {
+        val apNames = setOf("ap0", "wlan1", "swlan0", "ap1", "softap0", "wlan0")
+        return try {
+            NetworkInterface.getNetworkInterfaces()?.asSequence()?.any { iface ->
+                iface.isUp && !iface.isLoopback &&
+                    iface.name in apNames &&
+                    iface.inetAddresses.asSequence().any { it is Inet4Address && !it.isLoopbackAddress }
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Check for common hotspot IP subnets on any interface.
+     * Different vendors use different subnets.
+     */
+    private fun hasHotspotSubnet(): Boolean {
+        val hotspotPrefixes = listOf(
+            "192.168.43.",   // Stock Android
+            "192.168.49.",   // Some Samsung devices
+            "192.168.2.",    // Some Huawei devices
+            "172.20.10.",    // Some devices
+            "10.0.0.",       // Some carriers/devices
+        )
+        return try {
+            NetworkInterface.getNetworkInterfaces()?.asSequence()?.any { iface ->
+                iface.isUp && !iface.isLoopback && iface.inetAddresses.asSequence().any { addr ->
+                    if (addr is Inet4Address) {
+                        val ip = addr.hostAddress ?: return@any false
+                        hotspotPrefixes.any { prefix -> ip.startsWith(prefix) }
+                    } else false
+                }
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Parse /proc/net/arp to find connected clients.
+     * Looks for clients on any private subnet (not just 192.168.43.*).
      */
     private fun readArpTable(): List<ConnectedClient> {
         return try {
             BufferedReader(FileReader("/proc/net/arp")).use { reader ->
                 reader.readLines()
-                    .drop(1) // skip header
+                    .drop(1)
                     .mapNotNull { line ->
                         val parts = line.trim().split("\\s+".toRegex())
                         if (parts.size >= 4) {
                             val ip = parts[0]
                             val flags = parts[2]
                             val mac = parts[3]
-                            // Filter: only hotspot subnet, valid flags (0x2 = complete)
-                            if (ip.startsWith("192.168.43.") &&
-                                flags != "0x0" &&
-                                mac != "00:00:00:00:00:00"
+                            if (flags != "0x0" &&
+                                mac != "00:00:00:00:00:00" &&
+                                isPrivateIp(ip)
                             ) {
                                 ConnectedClient(ipAddress = ip, macAddress = mac)
                             } else null
@@ -99,15 +156,28 @@ class HotspotManager(private val context: Context) {
         }
     }
 
-    /**
-     * Get the gateway IP of the hotspot (our phone's IP on the hotspot interface).
-     */
+    private fun isPrivateIp(ip: String): Boolean {
+        return ip.startsWith("192.168.") ||
+                ip.startsWith("10.") ||
+                ip.startsWith("172.16.") || ip.startsWith("172.17.") ||
+                ip.startsWith("172.18.") || ip.startsWith("172.19.") ||
+                ip.startsWith("172.20.") || ip.startsWith("172.21.") ||
+                ip.startsWith("172.22.") || ip.startsWith("172.23.") ||
+                ip.startsWith("172.24.") || ip.startsWith("172.25.") ||
+                ip.startsWith("172.26.") || ip.startsWith("172.27.") ||
+                ip.startsWith("172.28.") || ip.startsWith("172.29.") ||
+                ip.startsWith("172.30.") || ip.startsWith("172.31.")
+    }
+
     fun getGatewayIp(): String? {
+        val hotspotPrefixes = listOf("192.168.43.", "192.168.49.", "192.168.2.", "172.20.10.", "10.0.0.")
         return try {
             NetworkInterface.getNetworkInterfaces()?.asSequence()
                 ?.flatMap { it.inetAddresses.asSequence() }
                 ?.firstOrNull { addr ->
-                    addr is Inet4Address && addr.hostAddress?.startsWith("192.168.43.") == true
+                    addr is Inet4Address && hotspotPrefixes.any { prefix ->
+                        addr.hostAddress?.startsWith(prefix) == true
+                    }
                 }
                 ?.hostAddress
         } catch (e: Exception) {
