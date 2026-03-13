@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import com.supertesla.aa.R
@@ -61,13 +62,18 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
             // Settings gear icon - top right
             IconButton(
                 onClick = onSettings,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 52.dp, end = 16.dp)
+                    .padding(top = 8.dp, end = 12.dp)
                     .size(48.dp)
             ) {
                 Icon(
@@ -82,7 +88,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 28.dp)
-                .padding(top = 64.dp, bottom = 24.dp),
+                .padding(top = 16.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Logo + Header
