@@ -12,6 +12,8 @@ import android.content.ComponentName
 import android.os.Binder
 import android.os.IBinder
 import com.supertesla.aa.MainActivity
+import com.supertesla.aa.androidauto.headunit.AAHeadUnitEmulator
+import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
 import com.supertesla.aa.core.model.AppStateManager
@@ -39,6 +41,7 @@ class MainService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var pipelineJob: Job? = null
     private var webServer: WebServer? = null
+    private var aaEmulator: AAHeadUnitEmulator? = null
     private var vpnBound = false
 
     private var vpnService: VpnTunnelService? = null
@@ -125,6 +128,47 @@ class MainService : Service() {
                     }
                 }
 
+                // Step 4: Connect to Android Auto head unit server
+                appStateManager.transition(AppState.ConnectingAA)
+                updateNotification("Connecting to Android Auto...")
+
+                val emulator = AAHeadUnitEmulator(HeadUnitConfig(
+                    videoWidth = 1280,
+                    videoHeight = 720,
+                    videoFps = 30
+                ))
+                aaEmulator = emulator
+
+                emulator.onStateChanged = { state ->
+                    Timber.i("AA Emulator state: ${state::class.simpleName}")
+                    when (state) {
+                        is AAHeadUnitEmulator.State.Streaming -> {
+                            appStateManager.transition(AppState.Streaming)
+                            updateNotification("Streaming - $serverUrl")
+                        }
+                        is AAHeadUnitEmulator.State.Error -> {
+                            Timber.w("AA Emulator error: ${state.message}")
+                            // Don't fail the whole pipeline - server still serves web UI
+                        }
+                        is AAHeadUnitEmulator.State.Disconnected -> {
+                            if (appStateManager.state.value is AppState.Streaming) {
+                                appStateManager.transition(AppState.ServerRunning(serverUrl))
+                                updateNotification("AA disconnected - $serverUrl")
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+
+                launch(Dispatchers.IO) {
+                    try {
+                        emulator.connect()
+                    } catch (e: Exception) {
+                        Timber.w(e, "AA connection failed (server may not be running)")
+                        updateNotification("AA not available - $serverUrl")
+                    }
+                }
+
             } catch (e: Exception) {
                 Timber.e(e, "Pipeline failed")
                 appStateManager.transition(AppState.Error(e.message ?: "Unknown error"))
@@ -137,6 +181,9 @@ class MainService : Service() {
         Timber.d("Stopping pipeline")
         pipelineJob?.cancel()
         pipelineJob = null
+
+        aaEmulator?.destroy()
+        aaEmulator = null
 
         webServer?.stop()
         webServer = null

@@ -4,10 +4,10 @@
   "lastUpdated": "2026-03-13",
   "summary": {
     "totalFeatures": 52,
-    "completed": 7,
+    "completed": 16,
     "inProgress": 0,
-    "planned": 45,
-    "completionPercent": 13
+    "planned": 36,
+    "completionPercent": 31
   },
   "phases": [
     {
@@ -31,7 +31,9 @@
           "description": "Sealed class state machine with StateFlow (Idle -> HotspotReady -> VpnReady -> ServerRunning -> Streaming)",
           "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-1.1"]
+          "dependencies": [
+            "F-1.1"
+          ]
         },
         {
           "id": "F-1.3",
@@ -39,7 +41,9 @@
           "description": "VpnService assigning virtual IP 240.3.3.3 via TUN interface to bypass Tesla private IP blocking",
           "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-1.1"]
+          "dependencies": [
+            "F-1.1"
+          ]
         },
         {
           "id": "F-1.4",
@@ -47,7 +51,9 @@
           "description": "Detect hotspot state, monitor connected clients via ARP table polling, emit reactive Flow",
           "status": "completed",
           "priority": "high",
-          "dependencies": ["F-1.1"]
+          "dependencies": [
+            "F-1.1"
+          ]
         },
         {
           "id": "F-1.5",
@@ -55,7 +61,9 @@
           "description": "HTTP server on 240.3.3.3:8080 serving web frontend, health endpoint, WebSocket stub",
           "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-1.3"]
+          "dependencies": [
+            "F-1.3"
+          ]
         },
         {
           "id": "F-1.6",
@@ -63,7 +71,11 @@
           "description": "Foreground service orchestrating VPN + hotspot + server lifecycle with notification",
           "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-1.3", "F-1.4", "F-1.5"]
+          "dependencies": [
+            "F-1.3",
+            "F-1.4",
+            "F-1.5"
+          ]
         },
         {
           "id": "F-1.7",
@@ -71,14 +83,17 @@
           "description": "Jetpack Compose UI with start/stop button, status indicators, URL display",
           "status": "completed",
           "priority": "high",
-          "dependencies": ["F-1.2", "F-1.6"]
+          "dependencies": [
+            "F-1.2",
+            "F-1.6"
+          ]
         }
       ]
     },
     {
       "id": "phase2",
       "name": "Android Auto Protocol",
-      "status": "planned",
+      "status": "completed",
       "estimatedDays": 11,
       "planFile": "docs/phases/phase2_android_auto_protocol.md",
       "features": [
@@ -86,73 +101,91 @@
           "id": "F-2.1",
           "name": "Protobuf message definitions",
           "description": "AAP protobuf schemas: version, service discovery, channel open, video/audio config, input events",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-1.1"]
+          "dependencies": [
+            "F-1.1"
+          ]
         },
         {
           "id": "F-2.2",
           "name": "AAP message framing",
           "description": "Read/write AAP frames (channel + flags + length + payload), multi-frame reassembly",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-2.1"]
+          "dependencies": [
+            "F-2.1"
+          ]
         },
         {
           "id": "F-2.3",
           "name": "TLS handshake layer",
           "description": "SSLEngine-based TLS 1.2 within AAP framing, trust-all for local AA server",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-2.2"]
+          "dependencies": [
+            "F-2.2"
+          ]
         },
         {
           "id": "F-2.4",
           "name": "Channel multiplexer",
           "description": "Demux incoming frames to handlers, mux outgoing with thread-safe Mutex, support video/audio/input/sensor channels",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-2.3"]
+          "dependencies": [
+            "F-2.3"
+          ]
         },
         {
           "id": "F-2.5",
           "name": "AA head unit emulator",
           "description": "Connect to localhost:5277, version exchange, TLS, service discovery, channel negotiation, receive H.264 video",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-2.4"]
+          "dependencies": [
+            "F-2.4"
+          ]
         },
         {
           "id": "F-2.6",
           "name": "Video channel handler",
           "description": "Receive H.264 NAL units from AA video channel, emit to SharedFlow",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
-          "dependencies": ["F-2.5"]
+          "dependencies": [
+            "F-2.5"
+          ]
         },
         {
           "id": "F-2.7",
           "name": "Audio channel handler",
           "description": "Receive PCM audio data from AA audio channels, emit to SharedFlow",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
-          "dependencies": ["F-2.5"]
+          "dependencies": [
+            "F-2.5"
+          ]
         },
         {
           "id": "F-2.8",
           "name": "Local video validation",
           "description": "Decode H.264 via MediaCodec and display AA UI on phone SurfaceView for debugging",
-          "status": "planned",
+          "status": "completed",
           "priority": "medium",
-          "dependencies": ["F-2.6"]
+          "dependencies": [
+            "F-2.6"
+          ]
         },
         {
           "id": "F-2.9",
           "name": "Keepalive (PING/PONG)",
           "description": "AAP ping request/response to maintain connection",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
-          "dependencies": ["F-2.5"]
+          "dependencies": [
+            "F-2.5"
+          ]
         }
       ]
     },
@@ -169,7 +202,9 @@
           "description": "Parse Annex B byte stream into typed NAL units (SPS/PPS/IDR/P-frame), streaming mode support",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-2.6"]
+          "dependencies": [
+            "F-2.6"
+          ]
         },
         {
           "id": "F-3.2",
@@ -177,7 +212,9 @@
           "description": "Minimal ISO BMFF writer: ftyp + moov (avc1/avcC) init segment, moof+mdat media segments, Annex B to AVCC conversion",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-3.1"]
+          "dependencies": [
+            "F-3.1"
+          ]
         },
         {
           "id": "F-3.3",
@@ -185,7 +222,10 @@
           "description": "Stream fMP4 init + media segments as WebSocket binary frames to Tesla browser",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-3.2", "F-1.5"]
+          "dependencies": [
+            "F-3.2",
+            "F-1.5"
+          ]
         },
         {
           "id": "F-3.4",
@@ -193,7 +233,9 @@
           "description": "Decode H.264 to Bitmap, encode JPEG, serve as multipart HTTP stream at /stream.mjpeg",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-3.1"]
+          "dependencies": [
+            "F-3.1"
+          ]
         },
         {
           "id": "F-3.5",
@@ -201,7 +243,9 @@
           "description": "JavaScript MSE player with capability detection, buffer management, live edge tracking, MJPEG fallback",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-3.3"]
+          "dependencies": [
+            "F-3.3"
+          ]
         },
         {
           "id": "F-3.6",
@@ -209,7 +253,9 @@
           "description": "Fullscreen black layout, no scroll/zoom, status indicator, touch overlay div",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-3.5"]
+          "dependencies": [
+            "F-3.5"
+          ]
         }
       ]
     },
@@ -226,7 +272,9 @@
           "description": "Pointer Events on overlay div, coordinate normalization (0-1), multi-touch, gesture prevention, move throttling",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-3.6"]
+          "dependencies": [
+            "F-3.6"
+          ]
         },
         {
           "id": "F-4.2",
@@ -234,7 +282,10 @@
           "description": "WebSocket JSON deserialization, coordinate transform (normalized -> AA pixels), AAP InputEvent protobuf generation",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-4.1", "F-2.1"]
+          "dependencies": [
+            "F-4.1",
+            "F-2.1"
+          ]
         },
         {
           "id": "F-4.3",
@@ -242,7 +293,10 @@
           "description": "Single /ws endpoint: server sends binary video, client sends text touch events",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-3.3", "F-4.2"]
+          "dependencies": [
+            "F-3.3",
+            "F-4.2"
+          ]
         },
         {
           "id": "F-4.4",
@@ -250,7 +304,10 @@
           "description": "Forward touch events from relay to AA via encrypted input channel",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-4.2", "F-2.5"]
+          "dependencies": [
+            "F-4.2",
+            "F-2.5"
+          ]
         },
         {
           "id": "F-4.5",
@@ -258,7 +315,9 @@
           "description": "Long press, drag/swipe, two-finger pinch-to-zoom, scroll wheel support",
           "status": "planned",
           "priority": "medium",
-          "dependencies": ["F-4.4"]
+          "dependencies": [
+            "F-4.4"
+          ]
         }
       ]
     },
@@ -275,7 +334,9 @@
           "description": "Parse AAP audio frames (header + PCM), support media/navigation/call streams, emit via SharedFlow",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-2.7"]
+          "dependencies": [
+            "F-2.7"
+          ]
         },
         {
           "id": "F-5.2",
@@ -283,7 +344,9 @@
           "description": "Hardware MediaCodec AAC-LC encoder: 44100Hz stereo 128kbps, async callback pipeline",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-5.1"]
+          "dependencies": [
+            "F-5.1"
+          ]
         },
         {
           "id": "F-5.3",
@@ -291,7 +354,10 @@
           "description": "Add mp4a/esds audio track to init segment, interleave audio+video in media segments",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-5.2", "F-3.2"]
+          "dependencies": [
+            "F-5.2",
+            "F-3.2"
+          ]
         },
         {
           "id": "F-5.4",
@@ -299,7 +365,10 @@
           "description": "Unmute on first touch, volume control overlay, handle autoplay policy",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-5.3", "F-3.5"]
+          "dependencies": [
+            "F-5.3",
+            "F-3.5"
+          ]
         },
         {
           "id": "F-5.5",
@@ -307,7 +376,9 @@
           "description": "Handle AAP audio focus requests, stream priority (call > nav > media), volume ducking",
           "status": "planned",
           "priority": "medium",
-          "dependencies": ["F-5.1"]
+          "dependencies": [
+            "F-5.1"
+          ]
         },
         {
           "id": "F-5.6",
@@ -315,7 +386,9 @@
           "description": "Route audio via A2DP when browser audio unavailable (MJPEG mode)",
           "status": "planned",
           "priority": "low",
-          "dependencies": ["F-5.1"]
+          "dependencies": [
+            "F-5.1"
+          ]
         }
       ]
     },
@@ -332,7 +405,9 @@
           "description": "Google WebRTC Android SDK, PeerConnectionFactory with H.264 hardware encoder support",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-1.1"]
+          "dependencies": [
+            "F-1.1"
+          ]
         },
         {
           "id": "F-6.2",
@@ -340,7 +415,10 @@
           "description": "Custom VideoEncoder feeding pre-encoded AA H.264 NAL units into WebRTC, fallback decode+re-encode",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-6.1", "F-3.1"]
+          "dependencies": [
+            "F-6.1",
+            "F-3.1"
+          ]
         },
         {
           "id": "F-6.3",
@@ -348,7 +426,10 @@
           "description": "Custom AudioDeviceModule feeding AA PCM into WebRTC Opus encoder, disable audio processing",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-6.1", "F-5.1"]
+          "dependencies": [
+            "F-6.1",
+            "F-5.1"
+          ]
         },
         {
           "id": "F-6.4",
@@ -356,7 +437,10 @@
           "description": "HTTP endpoints for SDP offer/answer exchange and ICE candidate exchange",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-6.1", "F-1.5"]
+          "dependencies": [
+            "F-6.1",
+            "F-1.5"
+          ]
         },
         {
           "id": "F-6.5",
@@ -364,7 +448,10 @@
           "description": "Replace WebSocket touch events with SCTP DataChannel for lower latency",
           "status": "planned",
           "priority": "medium",
-          "dependencies": ["F-6.4", "F-4.2"]
+          "dependencies": [
+            "F-6.4",
+            "F-4.2"
+          ]
         },
         {
           "id": "F-6.6",
@@ -372,7 +459,10 @@
           "description": "RTCPeerConnection setup, SDP exchange, track handling, fallback chain (WebRTC -> MSE -> MJPEG)",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-6.4", "F-3.5"]
+          "dependencies": [
+            "F-6.4",
+            "F-3.5"
+          ]
         }
       ]
     },
@@ -389,7 +479,9 @@
           "description": "6-step guided setup: AA config, hotspot, VPN permission, Tesla connection, QR code URL display",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-1.7"]
+          "dependencies": [
+            "F-1.7"
+          ]
         },
         {
           "id": "F-7.2",
@@ -397,7 +489,9 @@
           "description": "Exponential backoff retry for all connections: WebSocket, AA emulator, VPN; handle browser refresh, WiFi blips",
           "status": "planned",
           "priority": "critical",
-          "dependencies": ["F-1.6"]
+          "dependencies": [
+            "F-1.6"
+          ]
         },
         {
           "id": "F-7.3",
@@ -405,7 +499,9 @@
           "description": "Dynamic quality adjustment based on RTT, dropped frames, buffer level; 5 quality levels",
           "status": "planned",
           "priority": "medium",
-          "dependencies": ["F-3.3"]
+          "dependencies": [
+            "F-3.3"
+          ]
         },
         {
           "id": "F-7.4",
@@ -413,7 +509,9 @@
           "description": "Wake lock, WiFi lock, battery monitoring, quality reduction on battery, USB charge detection",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-1.6"]
+          "dependencies": [
+            "F-1.6"
+          ]
         },
         {
           "id": "F-7.5",
@@ -421,7 +519,9 @@
           "description": "User-friendly error messages with recovery actions for all failure scenarios",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-1.2"]
+          "dependencies": [
+            "F-1.2"
+          ]
         },
         {
           "id": "F-7.6",
@@ -429,7 +529,9 @@
           "description": "Video (resolution, FPS, mode), audio, network (IP, port), advanced (logs, debug) settings with DataStore",
           "status": "planned",
           "priority": "medium",
-          "dependencies": ["F-1.7"]
+          "dependencies": [
+            "F-1.7"
+          ]
         },
         {
           "id": "F-7.7",
@@ -437,7 +539,9 @@
           "description": "Browser-accessible /debug page: connection status, video/audio stats, touch log, memory, battery",
           "status": "planned",
           "priority": "low",
-          "dependencies": ["F-1.5"]
+          "dependencies": [
+            "F-1.5"
+          ]
         },
         {
           "id": "F-7.8",
@@ -453,7 +557,10 @@
           "description": "Test MCU2 (Intel) and MCU3 (AMD), verify codec support, tune defaults per hardware",
           "status": "planned",
           "priority": "high",
-          "dependencies": ["F-3.5", "F-6.6"]
+          "dependencies": [
+            "F-3.5",
+            "F-6.6"
+          ]
         }
       ]
     }
