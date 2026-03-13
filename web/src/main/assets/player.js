@@ -210,39 +210,146 @@
         video.replaceWith(img);
     }
 
+    // ---- WebRTC ----
+    var rtcPc = null;
+    var rtcDataChannel = null;
+
+    function supportsWebRTC() {
+        return !!(window.RTCPeerConnection);
+    }
+
+    function initWebRTC() {
+        mode = 'webrtc';
+        setStatus('buffering', 'WebRTC: Connecting...');
+
+        rtcPc = new RTCPeerConnection({ iceServers: [] });
+
+        rtcPc.ontrack = function(event) {
+            video.srcObject = event.streams[0];
+            video.play().catch(function() {});
+            if (splash && !splash.classList.contains('hidden')) {
+                splash.classList.add('hidden');
+                videoContainer.style.display = 'block';
+            }
+            setStatus('connected', 'WebRTC: Playing');
+        };
+
+        rtcPc.ondatachannel = function(event) {
+            rtcDataChannel = event.channel;
+            rtcDataChannel.onopen = function() {
+                console.log('WebRTC DataChannel open - switching touch transport');
+                if (window.SuperTeslaTouch) {
+                    window.SuperTeslaTouch.setDataChannel(rtcDataChannel);
+                }
+            };
+            rtcDataChannel.onmessage = function(e) {
+                console.log('DC message:', e.data);
+            };
+        };
+
+        rtcPc.oniceconnectionstatechange = function() {
+            console.log('ICE state:', rtcPc.iceConnectionState);
+            if (rtcPc.iceConnectionState === 'failed' || rtcPc.iceConnectionState === 'disconnected') {
+                setStatus('', 'WebRTC: Disconnected');
+                scheduleReconnect();
+            }
+        };
+
+        rtcPc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true })
+            .then(function(offer) { return rtcPc.setLocalDescription(offer); })
+            .then(function() {
+                // Wait for ICE gathering
+                return new Promise(function(resolve) {
+                    if (rtcPc.iceGatheringState === 'complete') { resolve(); return; }
+                    var timeout = setTimeout(resolve, 3000);
+                    rtcPc.addEventListener('icegatheringstatechange', function() {
+                        if (rtcPc.iceGatheringState === 'complete') {
+                            clearTimeout(timeout);
+                            resolve();
+                        }
+                    });
+                });
+            })
+            .then(function() {
+                return fetch('/webrtc/offer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'offer', sdp: rtcPc.localDescription.sdp })
+                });
+            })
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('Signaling failed: ' + resp.status);
+                return resp.json();
+            })
+            .then(function(answer) {
+                return rtcPc.setRemoteDescription(new RTCSessionDescription(answer));
+            })
+            .then(function() {
+                setStatus('connected', 'WebRTC: Connected');
+                reconnectDelay = 1000;
+                // Also connect MSE WebSocket for fallback touch transport
+                connectVideoWebSocket();
+            })
+            .catch(function(err) {
+                console.warn('WebRTC failed, falling back:', err);
+                cleanupWebRTC();
+                fallbackToMSE();
+            });
+    }
+
+    function cleanupWebRTC() {
+        if (rtcDataChannel) { try { rtcDataChannel.close(); } catch(e){} rtcDataChannel = null; }
+        if (rtcPc) { try { rtcPc.close(); } catch(e){} rtcPc = null; }
+    }
+
+    function fallbackToMSE() {
+        var codec = supportsMediaSource();
+        if (codec) {
+            initMSE(codec);
+        } else {
+            fallbackToMJPEG();
+        }
+    }
+
     function scheduleReconnect() {
         if (reconnectTimer) return;
         reconnectTimer = setTimeout(function() {
             reconnectTimer = null;
 
-            // Reset MSE state
+            cleanupWebRTC();
             queue.length = 0;
             appending = false;
-
             if (mediaSource && mediaSource.readyState === 'open') {
                 try { mediaSource.endOfStream(); } catch (e) {}
             }
             mediaSource = null;
             sourceBuffer = null;
 
-            // Reinitialize
-            var codec = supportsMediaSource();
-            if (codec) {
-                initMSE(codec);
-            } else {
-                fallbackToMJPEG();
-            }
+            // Try WebRTC first, then MSE, then MJPEG
+            startPlayer();
         }, reconnectDelay);
         reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
     }
 
-    // ---- Initialize ----
-    var codec = supportsMediaSource();
-    if (codec) {
-        initMSE(codec);
-    } else {
-        fallbackToMJPEG();
+    function startPlayer() {
+        if (supportsWebRTC()) {
+            // Check if server supports WebRTC
+            fetch('/webrtc/status').then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.initialized !== undefined) {
+                        initWebRTC();
+                    } else {
+                        fallbackToMSE();
+                    }
+                })
+                .catch(function() { fallbackToMSE(); });
+        } else {
+            fallbackToMSE();
+        }
     }
+
+    // ---- Initialize ----
+    startPlayer();
 
     // Prevent default touch behaviors
     document.addEventListener('touchstart', function(e) {

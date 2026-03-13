@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import com.supertesla.aa.network.webrtc.SignalingHandler
+import com.supertesla.aa.network.webrtc.WebRtcManager
 import com.supertesla.aa.network.websocket.TouchInputRelay
 import timber.log.Timber
 
@@ -36,6 +38,7 @@ class WebServer(
     var videoStreamHandler: VideoStreamHandler? = null
     var videoFlow: Flow<ByteArray>? = null
     var touchInputRelay: TouchInputRelay? = null
+    var signalingHandler: SignalingHandler? = null
 
     val isRunning: Boolean
         get() = server != null
@@ -141,6 +144,9 @@ class WebServer(
                         }
                     }
                 }
+
+                // WebRTC signaling endpoints
+                signalingHandler?.registerRoutes(this)
 
                 // Unified WebSocket: video streaming (binary out) + touch events (text in)
                 webSocket("/ws") {

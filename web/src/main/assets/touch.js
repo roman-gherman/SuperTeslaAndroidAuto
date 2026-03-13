@@ -7,11 +7,15 @@
     var pendingMoves = {};
     var rafScheduled = false;
     var ws = null;
+    var dc = null; // WebRTC DataChannel (preferred transport)
 
-    // Allow player.js to set the WebSocket reference
+    // Allow player.js to set transport references
     window.SuperTeslaTouch = {
         setWebSocket: function(socket) {
             ws = socket;
+        },
+        setDataChannel: function(dataChannel) {
+            dc = dataChannel;
         }
     };
 
@@ -36,15 +40,23 @@
     }
 
     function sendTouch(action, pointerId, coords) {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({
+        var msg = JSON.stringify({
             type: 'touch',
             action: action,
             pointerId: pointerId,
             x: coords.x,
             y: coords.y,
             timestamp: Date.now()
-        }));
+        });
+
+        // Prefer DataChannel (lower latency) over WebSocket
+        if (dc && dc.readyState === 'open') {
+            dc.send(msg);
+            return;
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(msg);
+        }
     }
 
     // Pointer Events (preferred - supports multi-touch)

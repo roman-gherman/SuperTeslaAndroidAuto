@@ -46,4 +46,7 @@ dependencies {
     implementation(libs.ktor.server.cors)
     implementation(libs.ktor.serialization.json)
     implementation(libs.kotlinx.serialization.json)
+
+    // WebRTC
+    implementation(libs.webrtc)
 }

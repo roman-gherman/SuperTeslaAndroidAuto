@@ -4,10 +4,10 @@
   "lastUpdated": "2026-03-13",
   "summary": {
     "totalFeatures": 52,
-    "completed": 33,
+    "completed": 39,
     "inProgress": 0,
-    "planned": 19,
-    "completionPercent": 63
+    "planned": 13,
+    "completionPercent": 75
   },
   "phases": [
     {
@@ -395,7 +395,7 @@
     {
       "id": "phase6",
       "name": "WebRTC Streaming",
-      "status": "planned",
+      "status": "completed",
       "estimatedDays": 12,
       "planFile": "docs/phases/phase6_webrtc.md",
       "features": [
@@ -403,7 +403,7 @@
           "id": "F-6.1",
           "name": "WebRTC SDK integration",
           "description": "Google WebRTC Android SDK, PeerConnectionFactory with H.264 hardware encoder support",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-1.1"
@@ -413,7 +413,7 @@
           "id": "F-6.2",
           "name": "H.264 passthrough video source",
           "description": "Custom VideoEncoder feeding pre-encoded AA H.264 NAL units into WebRTC, fallback decode+re-encode",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-6.1",
@@ -424,7 +424,7 @@
           "id": "F-6.3",
           "name": "WebRTC audio source",
           "description": "Custom AudioDeviceModule feeding AA PCM into WebRTC Opus encoder, disable audio processing",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-6.1",
@@ -435,7 +435,7 @@
           "id": "F-6.4",
           "name": "WebRTC signaling server",
           "description": "HTTP endpoints for SDP offer/answer exchange and ICE candidate exchange",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-6.1",
@@ -446,7 +446,7 @@
           "id": "F-6.5",
           "name": "WebRTC data channel for touch",
           "description": "Replace WebSocket touch events with SCTP DataChannel for lower latency",
-          "status": "planned",
+          "status": "completed",
           "priority": "medium",
           "dependencies": [
             "F-6.4",
@@ -457,7 +457,7 @@
           "id": "F-6.6",
           "name": "Browser WebRTC client",
           "description": "RTCPeerConnection setup, SDP exchange, track handling, fallback chain (WebRTC -> MSE -> MJPEG)",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-6.4",
