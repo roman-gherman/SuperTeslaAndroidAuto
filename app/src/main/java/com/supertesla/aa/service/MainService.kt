@@ -151,74 +151,69 @@ class MainService : Service() {
                     }
                 }
 
-                // Step 4: Connect to Android Auto head unit server
-                appStateManager.transition(AppState.ConnectingAA)
-                updateNotification("Connecting to Android Auto...")
-
-                val emulator = AAHeadUnitEmulator(HeadUnitConfig(
-                    videoWidth = videoWidth,
-                    videoHeight = videoHeight,
-                    videoFps = 30
-                ))
-                aaEmulator = emulator
-
-                // Wire touch relay -> AA input channel
-                touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
-                    override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
-                        emulator.inputHandler?.sendTouchEvent(action, x, y, pointerId)
-                    }
-                })
-
-                emulator.onStateChanged = { state ->
-                    Timber.i("AA Emulator state: ${state::class.simpleName}")
-                    when (state) {
-                        is AAHeadUnitEmulator.State.Streaming -> {
-                            appStateManager.transition(AppState.Streaming)
-                            updateNotification("Streaming - $serverUrl")
-                        }
-                        is AAHeadUnitEmulator.State.Error -> {
-                            Timber.w("AA Emulator error: ${state.message}")
-                            // Don't fail the whole pipeline - server still serves web UI
-                        }
-                        is AAHeadUnitEmulator.State.Disconnected -> {
-                            if (appStateManager.state.value is AppState.Streaming) {
-                                appStateManager.transition(AppState.ServerRunning(serverUrl))
-                                updateNotification("AA disconnected - $serverUrl")
-                            }
-                        }
-                        else -> {}
-                    }
-                }
-
+                // Step 4: Try connecting to Android Auto (background, with timeout)
+                // Server is already running - AA is optional
                 launch(Dispatchers.IO) {
-                    try {
-                        emulator.connect()
+                    appStateManager.transition(AppState.ConnectingAA)
+                    updateNotification("Connecting to Android Auto...")
 
-                        // Wire video flow from AA emulator to web server
-                        val videoHandler = emulator.videoHandler
-                        if (videoHandler != null) {
-                            val videoDataFlow = videoHandler.videoFrames.map { it.data }
-                            webServer?.videoFlow = videoDataFlow
-                            Timber.i("Video flow wired to web server")
+                    val emulator = AAHeadUnitEmulator(HeadUnitConfig(
+                        videoWidth = videoWidth,
+                        videoHeight = videoHeight,
+                        videoFps = 30
+                    ))
+                    aaEmulator = emulator
+
+                    touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
+                        override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
+                            emulator.inputHandler?.sendTouchEvent(action, x, y, pointerId)
+                        }
+                    })
+
+                    emulator.onStateChanged = { state ->
+                        Timber.i("AA Emulator state: ${state::class.simpleName}")
+                        when (state) {
+                            is AAHeadUnitEmulator.State.Streaming -> {
+                                appStateManager.transition(AppState.Streaming)
+                                updateNotification("Streaming - $serverUrl")
+                            }
+                            is AAHeadUnitEmulator.State.Error -> {
+                                appStateManager.transition(AppState.ServerRunning(serverUrl))
+                                updateNotification("Ready - $serverUrl")
+                            }
+                            is AAHeadUnitEmulator.State.Disconnected -> {
+                                appStateManager.transition(AppState.ServerRunning(serverUrl))
+                                updateNotification("Ready - $serverUrl")
+                            }
+                            else -> {}
+                        }
+                    }
+
+                    try {
+                        // Timeout AA connection after 8 seconds
+                        kotlinx.coroutines.withTimeout(8000) {
+                            emulator.connect()
                         }
 
-                        // Wire audio: start AAC encoder and collect media audio
-                        val mediaAudio = emulator.audioMediaHandler
-                        if (mediaAudio != null) {
+                        // Wire video + audio if connected
+                        emulator.videoHandler?.let { vh ->
+                            webServer?.videoFlow = vh.videoFrames.map { it.data }
+                            Timber.i("Video flow wired")
+                        }
+                        emulator.audioMediaHandler?.let { ah ->
                             val encoder = AacEncoder(sampleRate = 48000, channelCount = 2, bitRate = 128_000)
                             aacEncoder = encoder
                             encoder.start()
-                            Timber.i("AAC encoder started for media audio")
-
-                            launch {
-                                mediaAudio.audioFrames.collect { frame ->
-                                    encoder.feedPcm(frame.data, frame.timestamp)
-                                }
-                            }
+                            launch { ah.audioFrames.collect { encoder.feedPcm(it.data, it.timestamp) } }
                         }
+                    } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                        Timber.w("AA connection timed out - head unit server not available")
+                        appStateManager.transition(AppState.ServerRunning(serverUrl))
+                        updateNotification("Ready - $serverUrl")
                     } catch (e: Exception) {
-                        Timber.w(e, "AA connection failed (server may not be running)")
-                        updateNotification("AA not available - $serverUrl")
+                        Timber.w(e, "AA connection failed")
+                        appStateManager.transition(AppState.ServerRunning(serverUrl))
+                        updateNotification("Ready - $serverUrl")
                     }
                 }
 

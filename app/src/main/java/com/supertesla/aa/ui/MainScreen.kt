@@ -152,7 +152,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                         is AppState.StartingHotspot -> "Waiting for hotspot..."
                         is AppState.StartingVpn -> "Setting up network..."
                         is AppState.StartingServer -> "Starting server..."
-                        is AppState.ConnectingAA -> "Connecting to Android Auto..."
+                        is AppState.ConnectingAA -> "Looking for Android Auto..."
                         else -> "Loading..."
                     },
                     style = MaterialTheme.typography.bodyLarge,
@@ -223,7 +223,7 @@ private fun StatusCard(appState: AppState, hotspotState: HotspotState) {
                     is HotspotState.ClientConnected -> "${hotspotState.clients.size} client(s)"
                     is HotspotState.Enabled -> "Active"
                     is HotspotState.Disabled -> "Off"
-                    is HotspotState.Unknown -> "Checking..."
+                    is HotspotState.Unknown -> "Off"
                 }
             )
             Spacer(Modifier.height(16.dp))
