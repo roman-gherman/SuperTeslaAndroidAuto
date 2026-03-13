@@ -50,12 +50,15 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
     // Observe hotspot state
     LaunchedEffect(Unit) {
         hotspotManager.observeHotspotState().collectLatest { state ->
-            val wasOff = !hotspotOn
             hotspotOn = state is HotspotState.Enabled || state is HotspotState.ClientConnected
-            // Auto-advance from hotspot page when it turns on
-            if (hotspotOn && wasOff && pagerState.currentPage == 1) {
-                pagerState.animateScrollToPage(2)
-            }
+        }
+    }
+
+    // Auto-advance when hotspot is on and we're on the hotspot page
+    LaunchedEffect(hotspotOn, pagerState.currentPage) {
+        if (hotspotOn && pagerState.currentPage == 1) {
+            kotlinx.coroutines.delay(800) // brief pause so user sees the green dot
+            pagerState.animateScrollToPage(2)
         }
     }
 
