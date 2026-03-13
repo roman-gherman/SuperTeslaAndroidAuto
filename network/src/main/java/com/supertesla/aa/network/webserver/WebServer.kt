@@ -23,7 +23,9 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import com.supertesla.aa.network.websocket.TouchInputRelay
 import timber.log.Timber
 
 class WebServer(
@@ -33,6 +35,7 @@ class WebServer(
     private var server: ApplicationEngine? = null
     var videoStreamHandler: VideoStreamHandler? = null
     var videoFlow: Flow<ByteArray>? = null
+    var touchInputRelay: TouchInputRelay? = null
 
     val isRunning: Boolean
         get() = server != null
@@ -86,6 +89,11 @@ class WebServer(
                     call.respondText(js, ContentType.Application.JavaScript)
                 }
 
+                get("/touch.js") {
+                    val js = readAsset("touch.js")
+                    call.respondText(js, ContentType.Application.JavaScript)
+                }
+
                 // Health & status
                 get("/health") {
                     call.respondText("ok", ContentType.Text.Plain)
@@ -129,32 +137,45 @@ class WebServer(
                     }
                 }
 
-                // WebSocket for video streaming (MSE fMP4) and touch events
+                // Unified WebSocket: video streaming (binary out) + touch events (text in)
                 webSocket("/ws") {
                     Timber.d("WebSocket client connected")
                     val handler = videoStreamHandler
                     val flow = videoFlow
+                    val relay = touchInputRelay
 
-                    if (handler != null && flow != null) {
-                        // Stream video to this client
-                        handler.handleClient(this, flow)
-                    } else {
-                        // No video yet - keep connection open for touch events
-                        handler?.sendWaitingMessage(this)
-                        try {
-                            for (frame in incoming) {
-                                when (frame) {
-                                    is Frame.Text -> {
-                                        val text = frame.readText()
-                                        Timber.d("WS received: $text")
-                                    }
-                                    is Frame.Close -> break
-                                    else -> {}
-                                }
+                    // Launch video streaming in a separate coroutine
+                    val videoJob = if (handler != null && flow != null) {
+                        launch {
+                            try {
+                                handler.handleClient(this@webSocket, flow)
+                            } catch (e: Exception) {
+                                Timber.d("Video stream ended: ${e.message}")
                             }
-                        } finally {
-                            Timber.d("WebSocket client disconnected")
                         }
+                    } else {
+                        handler?.sendWaitingMessage(this)
+                        null
+                    }
+
+                    // Read incoming messages (touch events) on the main WS coroutine
+                    try {
+                        for (frame in incoming) {
+                            when (frame) {
+                                is Frame.Text -> {
+                                    val text = frame.readText()
+                                    val handled = relay?.handleMessage(text) ?: false
+                                    if (!handled) {
+                                        Timber.v("WS unhandled text: $text")
+                                    }
+                                }
+                                is Frame.Close -> break
+                                else -> {}
+                            }
+                        }
+                    } finally {
+                        videoJob?.cancel()
+                        Timber.d("WebSocket client disconnected")
                     }
                 }
             }

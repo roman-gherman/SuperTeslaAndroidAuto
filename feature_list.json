@@ -4,10 +4,10 @@
   "lastUpdated": "2026-03-13",
   "summary": {
     "totalFeatures": 52,
-    "completed": 22,
+    "completed": 27,
     "inProgress": 0,
-    "planned": 30,
-    "completionPercent": 42
+    "planned": 25,
+    "completionPercent": 52
   },
   "phases": [
     {
@@ -262,7 +262,7 @@
     {
       "id": "phase4",
       "name": "Touch Input",
-      "status": "planned",
+      "status": "completed",
       "estimatedDays": 5,
       "planFile": "docs/phases/phase4_touch_input.md",
       "features": [
@@ -270,7 +270,7 @@
           "id": "F-4.1",
           "name": "Browser touch capture",
           "description": "Pointer Events on overlay div, coordinate normalization (0-1), multi-touch, gesture prevention, move throttling",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-3.6"
@@ -280,7 +280,7 @@
           "id": "F-4.2",
           "name": "Touch event relay server",
           "description": "WebSocket JSON deserialization, coordinate transform (normalized -> AA pixels), AAP InputEvent protobuf generation",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-4.1",
@@ -291,7 +291,7 @@
           "id": "F-4.3",
           "name": "Unified bidirectional WebSocket",
           "description": "Single /ws endpoint: server sends binary video, client sends text touch events",
-          "status": "planned",
+          "status": "completed",
           "priority": "high",
           "dependencies": [
             "F-3.3",
@@ -302,7 +302,7 @@
           "id": "F-4.4",
           "name": "AAP input channel integration",
           "description": "Forward touch events from relay to AA via encrypted input channel",
-          "status": "planned",
+          "status": "completed",
           "priority": "critical",
           "dependencies": [
             "F-4.2",
@@ -313,7 +313,7 @@
           "id": "F-4.5",
           "name": "Advanced touch gestures",
           "description": "Long press, drag/swipe, two-finger pinch-to-zoom, scroll wheel support",
-          "status": "planned",
+          "status": "completed",
           "priority": "medium",
           "dependencies": [
             "F-4.4"

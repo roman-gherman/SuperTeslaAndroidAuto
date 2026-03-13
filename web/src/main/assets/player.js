@@ -131,6 +131,10 @@
         ws.onopen = function() {
             setStatus('connected', 'MSE: Connected');
             reconnectDelay = 1000;
+            // Share WebSocket with touch handler
+            if (window.SuperTeslaTouch) {
+                window.SuperTeslaTouch.setWebSocket(ws);
+            }
         };
 
         ws.onmessage = function(event) {

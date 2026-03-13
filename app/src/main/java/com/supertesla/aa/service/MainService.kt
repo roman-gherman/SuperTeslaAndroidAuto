@@ -22,6 +22,7 @@ import com.supertesla.aa.network.hotspot.HotspotManager
 import com.supertesla.aa.network.vpn.VpnTunnelService
 import com.supertesla.aa.network.webserver.VideoStreamHandler
 import com.supertesla.aa.network.webserver.WebServer
+import com.supertesla.aa.network.websocket.TouchInputRelay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CoroutineScope
@@ -115,8 +116,13 @@ class MainService : Service() {
                 appStateManager.transition(AppState.StartingServer)
                 updateNotification("Starting server...")
 
+                val videoWidth = 1280
+                val videoHeight = 720
+
+                val touchRelay = TouchInputRelay(videoWidth, videoHeight)
                 val server = WebServer(assets, AppConfig.SERVER_PORT)
-                server.videoStreamHandler = VideoStreamHandler(1280, 720, 30)
+                server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
+                server.touchInputRelay = touchRelay
                 webServer = server
                 server.start()
 
@@ -137,11 +143,18 @@ class MainService : Service() {
                 updateNotification("Connecting to Android Auto...")
 
                 val emulator = AAHeadUnitEmulator(HeadUnitConfig(
-                    videoWidth = 1280,
-                    videoHeight = 720,
+                    videoWidth = videoWidth,
+                    videoHeight = videoHeight,
                     videoFps = 30
                 ))
                 aaEmulator = emulator
+
+                // Wire touch relay -> AA input channel
+                touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
+                    override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
+                        emulator.inputHandler?.sendTouchEvent(action, x, y, pointerId)
+                    }
+                })
 
                 emulator.onStateChanged = { state ->
                     Timber.i("AA Emulator state: ${state::class.simpleName}")
