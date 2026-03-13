@@ -32,9 +32,10 @@ fun SettingsScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(Modifier.height(48.dp)) // clear status bar / notch
 
             // Top bar with prominent back button
             Row(

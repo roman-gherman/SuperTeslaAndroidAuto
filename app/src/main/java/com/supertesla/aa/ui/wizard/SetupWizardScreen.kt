@@ -81,12 +81,17 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
         modifier = Modifier.fillMaxSize(),
         color = TeslaDark
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
             // Page dots
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 56.dp, bottom = 24.dp),
+                    .padding(top = 16.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
                 repeat(PAGE_COUNT) { index ->
