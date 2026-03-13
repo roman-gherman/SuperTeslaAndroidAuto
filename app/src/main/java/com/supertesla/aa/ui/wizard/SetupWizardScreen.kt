@@ -41,6 +41,7 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
 
     val hotspotManager = remember { HotspotManager(context) }
     var hotspotOn by remember { mutableStateOf(false) }
+    var hotspotAutoAdvanced by remember { mutableStateOf(false) }
 
     // Try to start AA head unit server silently on launch
     LaunchedEffect(Unit) {
@@ -54,11 +55,13 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
         }
     }
 
-    // Auto-advance when hotspot is on and we're on the hotspot page
-    LaunchedEffect(hotspotOn, pagerState.currentPage) {
-        if (hotspotOn && pagerState.currentPage == 1) {
-            kotlinx.coroutines.delay(800) // brief pause so user sees the green dot
-            pagerState.animateScrollToPage(2)
+    // Auto-advance once when hotspot is on and user arrives at the hotspot page
+    val currentPage = pagerState.currentPage
+    LaunchedEffect(hotspotOn, currentPage) {
+        if (hotspotOn && !hotspotAutoAdvanced && currentPage == 1) {
+            hotspotAutoAdvanced = true
+            kotlinx.coroutines.delay(800)
+            pagerState.scrollToPage(2)
         }
     }
 
