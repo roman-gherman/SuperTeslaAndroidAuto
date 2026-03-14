@@ -1,7 +1,9 @@
 package com.supertesla.aa.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.net.VpnService
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -45,17 +47,29 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
 
     var vpnPermissionGranted by remember { mutableStateOf(false) }
 
+    // Screen capture permission launcher
+    val screenCaptureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            MainService.startCapture(context, result.resultCode, result.data!!)
+        }
+    }
+
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
         vpnPermissionGranted = true
         MainService.start(context)
+        // Request screen capture after service starts
+        val projManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        screenCaptureLauncher.launch(projManager.createScreenCaptureIntent())
     }
 
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ ->
-        requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
+        requestVpnAndStart(context, vpnLauncher, screenCaptureLauncher) { vpnPermissionGranted = true }
     }
 
     Surface(
@@ -173,7 +187,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                         ) {
                             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
-                            requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
+                            requestVpnAndStart(context, vpnLauncher, screenCaptureLauncher) { vpnPermissionGranted = true }
                         }
                     }
                 },
@@ -326,13 +340,18 @@ private fun ErrorCard(error: AppState.Error) {
 private fun requestVpnAndStart(
     context: android.content.Context,
     vpnLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>,
+    screenCaptureLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>,
     onAlreadyGranted: () -> Unit
 ) {
     val prepareIntent = VpnService.prepare(context)
     if (prepareIntent != null) {
+        // VPN permission needed - after granted, it will also request screen capture
         vpnLauncher.launch(prepareIntent)
     } else {
+        // VPN already granted - start service and request screen capture
         onAlreadyGranted()
         MainService.start(context)
+        val projManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        screenCaptureLauncher.launch(projManager.createScreenCaptureIntent())
     }
 }

@@ -1,5 +1,6 @@
 package com.supertesla.aa.service
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,32 +8,27 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
-import android.content.ComponentName
 import android.os.Binder
 import android.os.IBinder
 import com.supertesla.aa.MainActivity
-import com.supertesla.aa.androidauto.headunit.AAHeadUnitEmulator
-import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
-import com.supertesla.aa.network.dns.LocalDnsServer
-import com.supertesla.aa.network.dns.MdnsServiceRegistrar
 import com.supertesla.aa.core.model.AppStateManager
 import com.supertesla.aa.core.model.HotspotState
+import com.supertesla.aa.network.dns.MdnsServiceRegistrar
 import com.supertesla.aa.network.hotspot.HotspotManager
 import com.supertesla.aa.network.vpn.VpnTunnelService
 import com.supertesla.aa.network.webserver.VideoStreamHandler
 import com.supertesla.aa.network.webserver.WebServer
 import com.supertesla.aa.network.websocket.TouchInputRelay
-import com.supertesla.aa.streaming.audio.AacEncoder
+import com.supertesla.aa.streaming.capture.ScreenCaptureManager
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -47,21 +43,8 @@ class MainService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var pipelineJob: Job? = null
     private var webServer: WebServer? = null
-    private var dnsServer: LocalDnsServer? = null
     private var mdnsRegistrar: MdnsServiceRegistrar? = null
-    private var aaEmulator: AAHeadUnitEmulator? = null
-    private var aacEncoder: AacEncoder? = null
-    private var vpnBound = false
-
-    private var vpnService: VpnTunnelService? = null
-    private val vpnConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            // VPN service is started via intent, not bound this way for VpnService
-        }
-        override fun onServiceDisconnected(name: ComponentName?) {
-            vpnService = null
-        }
-    }
+    private var screenCapture: ScreenCaptureManager? = null
 
     inner class LocalBinder : Binder() {
         val service: MainService get() = this@MainService
@@ -83,6 +66,15 @@ class MainService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_START_CAPTURE -> {
+                // Start screen capture with the permission result
+                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
+                val data = intent.getParcelableExtra<Intent>(EXTRA_DATA)
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    startScreenCapture(resultCode, data)
+                }
+                return START_STICKY
+            }
         }
 
         startForeground(AppConfig.NOTIFICATION_ID, createNotification("Starting..."))
@@ -99,24 +91,21 @@ class MainService : Service() {
                 appStateManager.transition(AppState.StartingHotspot)
                 updateNotification("Waiting for hotspot...")
 
-                Timber.d("Waiting for hotspot to be enabled...")
                 hotspotManager.observeHotspotState().first { state ->
                     appStateManager.updateHotspotState(state)
                     state is HotspotState.Enabled || state is HotspotState.ClientConnected
                 }
                 appStateManager.transition(AppState.HotspotReady("Hotspot"))
-                Timber.i("Hotspot detected")
 
                 // Step 2: Start VPN
                 appStateManager.transition(AppState.StartingVpn)
-                updateNotification("Starting VPN...")
+                updateNotification("Setting up network...")
 
                 val vpnIntent = Intent(this@MainService, VpnTunnelService::class.java).apply {
                     putExtra(VpnTunnelService.EXTRA_VIRTUAL_IP, AppConfig.DEFAULT_VIRTUAL_IP)
                 }
                 startService(vpnIntent)
                 appStateManager.transition(AppState.VpnReady(AppConfig.DEFAULT_VIRTUAL_IP))
-                Timber.i("VPN service started with IP: ${AppConfig.DEFAULT_VIRTUAL_IP}")
 
                 // Step 3: Start web server
                 appStateManager.transition(AppState.StartingServer)
@@ -132,93 +121,34 @@ class MainService : Service() {
                 webServer = server
                 server.start()
 
-                // Register mDNS so Tesla can reach us at http://supertesla.local:8080
+                // Register mDNS
                 val mdns = MdnsServiceRegistrar(this@MainService)
                 mdnsRegistrar = mdns
                 mdns.register(AppConfig.SERVER_PORT)
 
-                // Detect actual hotspot IP for the URL shown to user
+                // Detect hotspot IP
                 val hotspotIp = hotspotManager.getGatewayIp()
                 if (hotspotIp != null) {
                     AppConfig.detectedHotspotIp = hotspotIp
-                    Timber.i("Detected hotspot IP: $hotspotIp")
                 }
 
                 val serverUrl = AppConfig.getServerUrl()
                 appStateManager.transition(AppState.ServerRunning(serverUrl))
-                updateNotification("Running - $serverUrl")
-                Timber.i("Server running at $serverUrl")
+                updateNotification("Ready - $serverUrl")
 
-                // Monitor hotspot for client connections
+                // Monitor hotspot
                 launch {
                     hotspotManager.observeHotspotState().collect { state ->
                         appStateManager.updateHotspotState(state)
                     }
                 }
 
-                // Step 4: Try connecting to Android Auto (background, with timeout)
-                // Server is already running - AA is optional
-                launch(Dispatchers.IO) {
-                    appStateManager.transition(AppState.ConnectingAA)
-                    updateNotification("Connecting to Android Auto...")
-
-                    val emulator = AAHeadUnitEmulator(HeadUnitConfig(
-                        videoWidth = videoWidth,
-                        videoHeight = videoHeight,
-                        videoFps = 30
-                    ))
-                    aaEmulator = emulator
-
-                    touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
-                        override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
-                            emulator.inputHandler?.sendTouchEvent(action, x, y, pointerId)
-                        }
-                    })
-
-                    emulator.onStateChanged = { state ->
-                        Timber.i("AA Emulator state: ${state::class.simpleName}")
-                        when (state) {
-                            is AAHeadUnitEmulator.State.Streaming -> {
-                                appStateManager.transition(AppState.Streaming)
-                                updateNotification("Streaming - $serverUrl")
-                            }
-                            is AAHeadUnitEmulator.State.Error -> {
-                                appStateManager.transition(AppState.ServerRunning(serverUrl))
-                                updateNotification("Ready - $serverUrl")
-                            }
-                            is AAHeadUnitEmulator.State.Disconnected -> {
-                                appStateManager.transition(AppState.ServerRunning(serverUrl))
-                                updateNotification("Ready - $serverUrl")
-                            }
-                            else -> {}
-                        }
-                    }
-
-                    try {
-                        // Timeout AA connection after 8 seconds
-                        kotlinx.coroutines.withTimeout(8000) {
-                            emulator.connect()
-                        }
-
-                        // Wire video + audio if connected
-                        emulator.videoHandler?.let { vh ->
-                            webServer?.videoFlow = vh.videoFrames.map { it.data }
-                            Timber.i("Video flow wired")
-                        }
-                        emulator.audioMediaHandler?.let { ah ->
-                            val encoder = AacEncoder(sampleRate = 48000, channelCount = 2, bitRate = 128_000)
-                            aacEncoder = encoder
-                            encoder.start()
-                            launch { ah.audioFrames.collect { encoder.feedPcm(it.data, it.timestamp) } }
-                        }
-                    } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                        Timber.w("AA connection timed out - head unit server not available")
-                        appStateManager.transition(AppState.ServerRunning(serverUrl))
-                        updateNotification("Ready - $serverUrl")
-                    } catch (e: Exception) {
-                        Timber.w(e, "AA connection failed")
-                        appStateManager.transition(AppState.ServerRunning(serverUrl))
-                        updateNotification("Ready - $serverUrl")
+                // Wire screen capture video to web server if already capturing
+                screenCapture?.let { capture ->
+                    if (capture.isCapturing) {
+                        webServer?.videoFlow = capture.videoFrames
+                        appStateManager.transition(AppState.Streaming)
+                        updateNotification("Streaming - $serverUrl")
                     }
                 }
 
@@ -230,25 +160,39 @@ class MainService : Service() {
         }
     }
 
+    /**
+     * Start screen capture after permission is granted.
+     * Called from MainActivity with the MediaProjection permission result.
+     */
+    private fun startScreenCapture(resultCode: Int, data: Intent) {
+        val capture = ScreenCaptureManager(
+            width = 1280, height = 720, fps = 30
+        )
+        screenCapture = capture
+        capture.startCapture(this, resultCode, data)
+
+        // Wire video to web server
+        webServer?.videoFlow = capture.videoFrames
+
+        val serverUrl = AppConfig.getServerUrl()
+        appStateManager.transition(AppState.Streaming)
+        updateNotification("Streaming - $serverUrl")
+        Timber.i("Screen capture streaming started")
+    }
+
     private fun stopPipeline() {
         Timber.d("Stopping pipeline")
         pipelineJob?.cancel()
         pipelineJob = null
 
-        aacEncoder?.release()
-        aacEncoder = null
-
-        aaEmulator?.destroy()
-        aaEmulator = null
+        screenCapture?.stopCapture()
+        screenCapture = null
 
         webServer?.stop()
         webServer = null
 
         mdnsRegistrar?.unregister()
         mdnsRegistrar = null
-
-        dnsServer?.stop()
-        dnsServer = null
 
         stopService(Intent(this, VpnTunnelService::class.java))
 
@@ -267,7 +211,7 @@ class MainService : Service() {
             "Streaming Service",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Shows when Android Auto streaming is active"
+            description = "Shows when screen streaming is active"
             setShowBadge(false)
         }
         val manager = getSystemService(NotificationManager::class.java)
@@ -292,11 +236,7 @@ class MainService : Service() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pendingIntent)
-            .addAction(
-                Notification.Action.Builder(
-                    null, "Stop", stopIntent
-                ).build()
-            )
+            .addAction(Notification.Action.Builder(null, "Stop", stopIntent).build())
             .setOngoing(true)
             .build()
     }
@@ -308,6 +248,9 @@ class MainService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.supertesla.aa.STOP"
+        const val ACTION_START_CAPTURE = "com.supertesla.aa.START_CAPTURE"
+        const val EXTRA_RESULT_CODE = "result_code"
+        const val EXTRA_DATA = "data"
 
         fun start(context: Context) {
             val intent = Intent(context, MainService::class.java)
@@ -317,6 +260,15 @@ class MainService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, MainService::class.java).apply {
                 action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
+
+        fun startCapture(context: Context, resultCode: Int, data: Intent) {
+            val intent = Intent(context, MainService::class.java).apply {
+                action = ACTION_START_CAPTURE
+                putExtra(EXTRA_RESULT_CODE, resultCode)
+                putExtra(EXTRA_DATA, data)
             }
             context.startService(intent)
         }

@@ -2,7 +2,6 @@
 
 package com.supertesla.aa.ui.wizard
 
-import android.content.ComponentName
 import android.content.Intent
 import android.net.VpnService
 import android.provider.Settings
@@ -27,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.supertesla.aa.androidauto.launcher.AALauncher
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.network.hotspot.HotspotManager
@@ -51,7 +51,8 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
     ) { }
 
     LaunchedEffect(Unit) {
-        tryStartHeadUnitServer(context)
+        // Pre-launch AA silently (will auto-start when service connects later)
+        AALauncher.tryStartDevHeadUnitServer(context)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             btPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
         }
@@ -336,14 +337,3 @@ private fun WizardPage(
     }
 }
 
-private fun tryStartHeadUnitServer(context: android.content.Context) {
-    try {
-        val intent = Intent().apply {
-            component = ComponentName(
-                "com.google.android.projection.gearhead",
-                "com.google.android.projection.gearhead.companion.DeveloperHeadUnitNetworkService"
-            )
-        }
-        context.startService(intent)
-    } catch (_: Exception) {}
-}
