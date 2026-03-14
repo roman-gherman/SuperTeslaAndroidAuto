@@ -28,7 +28,8 @@ class VpnTunnelService : VpnService() {
             val builder = Builder()
             builder.setSession("SuperTeslaAA")
             builder.addAddress(virtualIp, 32)
-            builder.addRoute(AppConfig.HOTSPOT_SUBNET, AppConfig.HOTSPOT_SUBNET_PREFIX)
+            builder.addRoute("10.0.0.0", 8)        // 10.x.x.x (some hotspots)
+            builder.addRoute("192.168.0.0", 16)    // 192.168.x.x (standard hotspots)
             builder.setMtu(1500)
             builder.setBlocking(false)
 

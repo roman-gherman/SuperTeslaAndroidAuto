@@ -94,7 +94,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             SectionHeader("About")
             InfoSetting("Version", "0.1.0")
             InfoSetting("URL", AppConfig.getServerUrl())
-            InfoSetting("Fallback", AppConfig.getServerUrlFallback())
+            InfoSetting("Hotspot IP", AppConfig.detectedHotspotIp ?: "Not detected")
 
             Spacer(Modifier.height(40.dp))
         }

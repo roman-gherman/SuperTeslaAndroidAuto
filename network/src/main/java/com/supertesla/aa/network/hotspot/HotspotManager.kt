@@ -144,17 +144,45 @@ class HotspotManager(private val context: Context) {
                 ip.startsWith("172.30.") || ip.startsWith("172.31.")
     }
 
+    /**
+     * Get the hotspot gateway IP by finding the AP interface.
+     * Tries dedicated AP interfaces first, then falls back to any
+     * non-loopback, non-VPN, non-primary-WiFi interface.
+     */
     fun getGatewayIp(): String? {
-        val hotspotPrefixes = listOf("192.168.43.", "192.168.49.", "192.168.2.", "172.20.10.", "10.0.0.")
         return try {
-            NetworkInterface.getNetworkInterfaces()?.asSequence()
-                ?.flatMap { it.inetAddresses.asSequence() }
-                ?.firstOrNull { addr ->
-                    addr is Inet4Address && hotspotPrefixes.any { prefix ->
-                        addr.hostAddress?.startsWith(prefix) == true
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: return null
+
+            // Method 1: Look for dedicated AP interfaces
+            val apNames = setOf("ap0", "wlan1", "swlan0", "ap1", "softap0", "wlan2")
+            for (iface in interfaces) {
+                if (iface.isUp && iface.name in apNames) {
+                    val ip = iface.inetAddresses.asSequence()
+                        .filterIsInstance<Inet4Address>()
+                        .firstOrNull { !it.isLoopbackAddress }
+                        ?.hostAddress
+                    if (ip != null) {
+                        Timber.d("Hotspot IP found on ${iface.name}: $ip")
+                        return ip
                     }
                 }
-                ?.hostAddress
+            }
+
+            // Method 2: Find any private IP that's not loopback or VPN (240.x.x.x)
+            for (iface in interfaces) {
+                if (!iface.isUp || iface.isLoopback || iface.name == "tun0") continue
+                val ip = iface.inetAddresses.asSequence()
+                    .filterIsInstance<Inet4Address>()
+                    .firstOrNull { addr ->
+                        !addr.isLoopbackAddress &&
+                            addr.hostAddress?.startsWith("240.") != true &&
+                            isPrivateIp(addr.hostAddress ?: "")
+                    }
+                    ?.hostAddress
+                if (ip != null) return ip
+            }
+
+            null
         } catch (e: Exception) {
             Timber.w(e, "Failed to get gateway IP")
             null

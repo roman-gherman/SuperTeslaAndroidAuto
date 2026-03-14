@@ -262,7 +262,7 @@ private fun HotspotPage(context: android.content.Context, hotspotOn: Boolean) {
 @Composable
 private fun ConnectTeslaPage() {
     val url = AppConfig.getServerUrl()
-    val fallback = AppConfig.getServerUrlFallback()
+    val fallback = "http://${AppConfig.detectedHotspotIp ?: AppConfig.DEFAULT_VIRTUAL_IP}:${AppConfig.SERVER_PORT}"
 
     WizardPage(
         title = "Open in Tesla",

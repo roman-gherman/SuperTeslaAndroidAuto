@@ -17,6 +17,7 @@ import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
 import com.supertesla.aa.network.dns.LocalDnsServer
+import com.supertesla.aa.network.dns.MdnsServiceRegistrar
 import com.supertesla.aa.core.model.AppStateManager
 import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.network.hotspot.HotspotManager
@@ -47,6 +48,7 @@ class MainService : Service() {
     private var pipelineJob: Job? = null
     private var webServer: WebServer? = null
     private var dnsServer: LocalDnsServer? = null
+    private var mdnsRegistrar: MdnsServiceRegistrar? = null
     private var aaEmulator: AAHeadUnitEmulator? = null
     private var aacEncoder: AacEncoder? = null
     private var vpnBound = false
@@ -116,15 +118,6 @@ class MainService : Service() {
                 appStateManager.transition(AppState.VpnReady(AppConfig.DEFAULT_VIRTUAL_IP))
                 Timber.i("VPN service started with IP: ${AppConfig.DEFAULT_VIRTUAL_IP}")
 
-                // Step 2b: Start local DNS server (resolves super.taa -> 240.3.3.3)
-                val dns = LocalDnsServer(
-                    hostname = AppConfig.HOSTNAME,
-                    virtualIp = AppConfig.DEFAULT_VIRTUAL_IP
-                )
-                dnsServer = dns
-                dns.start()
-                Timber.i("DNS server started: ${AppConfig.HOSTNAME} -> ${AppConfig.DEFAULT_VIRTUAL_IP}")
-
                 // Step 3: Start web server
                 appStateManager.transition(AppState.StartingServer)
                 updateNotification("Starting server...")
@@ -138,6 +131,18 @@ class MainService : Service() {
                 server.touchInputRelay = touchRelay
                 webServer = server
                 server.start()
+
+                // Register mDNS so Tesla can reach us at http://supertesla.local:8080
+                val mdns = MdnsServiceRegistrar(this@MainService)
+                mdnsRegistrar = mdns
+                mdns.register(AppConfig.SERVER_PORT)
+
+                // Detect actual hotspot IP for the URL shown to user
+                val hotspotIp = hotspotManager.getGatewayIp()
+                if (hotspotIp != null) {
+                    AppConfig.detectedHotspotIp = hotspotIp
+                    Timber.i("Detected hotspot IP: $hotspotIp")
+                }
 
                 val serverUrl = AppConfig.getServerUrl()
                 appStateManager.transition(AppState.ServerRunning(serverUrl))
@@ -238,6 +243,9 @@ class MainService : Service() {
 
         webServer?.stop()
         webServer = null
+
+        mdnsRegistrar?.unregister()
+        mdnsRegistrar = null
 
         dnsServer?.stop()
         dnsServer = null
