@@ -158,21 +158,24 @@ class WebServer(
                 webSocket("/ws") {
                     Timber.d("WebSocket client connected")
                     val handler = videoStreamHandler
-                    val flow = videoFlow
                     val relay = touchInputRelay
 
-                    // Launch video streaming in a separate coroutine
-                    val videoJob = if (handler != null && flow != null) {
-                        launch {
-                            try {
-                                handler.handleClient(this@webSocket, flow)
-                            } catch (e: Exception) {
-                                Timber.d("Video stream ended: ${e.message}")
-                            }
+                    // Wait for video flow to become available (screen capture may start later)
+                    val videoJob = launch {
+                        // Poll until video flow is available
+                        var flow = videoFlow
+                        while (flow == null) {
+                            handler?.sendWaitingMessage(this@webSocket)
+                            kotlinx.coroutines.delay(2000)
+                            flow = videoFlow
                         }
-                    } else {
-                        handler?.sendWaitingMessage(this)
-                        null
+                        // Video flow available - start streaming
+                        Timber.i("Video flow available, starting stream to client")
+                        try {
+                            handler?.handleClient(this@webSocket, flow)
+                        } catch (e: Exception) {
+                            Timber.d("Video stream ended: ${e.message}")
+                        }
                     }
 
                     // Read incoming messages (touch events) on the main WS coroutine
@@ -191,7 +194,7 @@ class WebServer(
                             }
                         }
                     } finally {
-                        videoJob?.cancel()
+                        videoJob.cancel()
                         Timber.d("WebSocket client disconnected")
                     }
                 }
