@@ -60,6 +60,7 @@ class MainService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        android.util.Log.i("SuperTeslaAA", "onStartCommand action=${intent?.action}")
         when (intent?.action) {
             ACTION_STOP -> {
                 stopPipeline()
@@ -165,14 +166,17 @@ class MainService : Service() {
      * Called from MainActivity with the MediaProjection permission result.
      */
     private fun startScreenCapture(resultCode: Int, data: Intent) {
+        android.util.Log.i("SuperTeslaAA", "startScreenCapture called, resultCode=$resultCode")
         val capture = ScreenCaptureManager(
             width = 1280, height = 720, fps = 30
         )
         screenCapture = capture
         capture.startCapture(this, resultCode, data)
+        android.util.Log.i("SuperTeslaAA", "Screen capture started, isCapturing=${capture.isCapturing}")
 
         // Wire video to web server
         webServer?.videoFlow = capture.videoFrames
+        android.util.Log.i("SuperTeslaAA", "Video flow wired to webServer, webServer=${webServer != null}")
 
         val serverUrl = AppConfig.getServerUrl()
         appStateManager.transition(AppState.Streaming)
