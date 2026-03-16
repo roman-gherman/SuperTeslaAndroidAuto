@@ -47,6 +47,9 @@ class MainService : Service() {
     private var webServer: WebServer? = null
     private var mdnsRegistrar: MdnsServiceRegistrar? = null
     private var screenCapture: ScreenCaptureManager? = null
+    private var webRtcManager: WebRtcManager? = null
+    private var batteryOptimizer: BatteryOptimizer? = null
+    private var reconnectionManager: ReconnectionManager? = null
 
     inner class LocalBinder : Binder() {
         val service: MainService get() = this@MainService
@@ -90,6 +93,11 @@ class MainService : Service() {
 
         pipelineJob = serviceScope.launch {
             try {
+                // Acquire wake/WiFi locks to keep streaming stable
+                val optimizer = BatteryOptimizer(this@MainService)
+                batteryOptimizer = optimizer
+                optimizer.acquireLocks()
+
                 // Step 1: Wait for hotspot
                 appStateManager.transition(AppState.StartingHotspot)
                 updateNotification("Waiting for hotspot...")
@@ -118,17 +126,52 @@ class MainService : Service() {
                 val videoHeight = 720
 
                 val touchRelay = TouchInputRelay(videoWidth, videoHeight)
+
+                // Wire touch events to AccessibilityService for injection
+                touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
+                    override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
+                        val injector = TouchInjectionService.instance
+                        if (injector == null) {
+                            Timber.w("Touch event ignored — AccessibilityService not enabled")
+                            return
+                        }
+                        val fx = x.toFloat()
+                        val fy = y.toFloat()
+                        when (action) {
+                            TouchInputRelay.ACTION_DOWN -> injector.onTouchDown(pointerId, fx, fy)
+                            TouchInputRelay.ACTION_MOVE -> injector.onTouchMove(pointerId, fx, fy)
+                            TouchInputRelay.ACTION_UP -> injector.onTouchUp(pointerId, fx, fy)
+                        }
+                    }
+                })
+
                 val server = WebServer(assets, AppConfig.SERVER_PORT)
                 server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
                 server.touchInputRelay = touchRelay
 
                 // Wire WebRTC signaling (lazy init — no native libs loaded until first offer)
                 try {
-                    val webRtcManager = WebRtcManager(this@MainService)
-                    webRtcManager.setTouchRelay(touchRelay)
-                    server.signalingHandler = SignalingHandler(webRtcManager)
+                    val rtcManager = WebRtcManager(this@MainService)
+                    rtcManager.setTouchRelay(touchRelay)
+                    server.signalingHandler = SignalingHandler(rtcManager)
+                    webRtcManager = rtcManager
+
+                    // Pass MediaProjection if screen capture already started
+                    screenCapture?.mediaProjection?.let { rtcManager.setMediaProjection(it) }
                 } catch (e: Exception) {
                     Timber.w(e, "WebRTC setup skipped (not available)")
+                }
+
+                // Diagnostic endpoint
+                server.diagnosticInfo = {
+                    val cap = screenCapture
+                    """{"capturing":${cap?.isCapturing},"encoderFrames":${cap?.totalFramesEncoded ?: 0},"videoFlowWired":${server.videoFlow != null},"webRtcInit":${webRtcManager?.isInitialized},"webRtcConnected":${webRtcManager?.isConnected}}"""
+                }
+
+                // Request keyframe when a new browser client connects (ensures fast first frame)
+                server.onClientConnected = {
+                    screenCapture?.requestKeyframe()
+                    Timber.d("New client connected — keyframe requested")
                 }
 
                 webServer = server
@@ -149,16 +192,53 @@ class MainService : Service() {
                 appStateManager.transition(AppState.ServerRunning(serverUrl))
                 updateNotification("Ready - $serverUrl")
 
-                // Monitor hotspot
+                // Monitor hotspot state and handle disconnects
+                val reconManager = ReconnectionManager(this)
+                reconnectionManager = reconManager
+
+                reconManager.monitor(
+                    name = "hotspot",
+                    connect = {
+                        // Wait for hotspot to come back
+                        hotspotManager.observeHotspotState().first { state ->
+                            state is HotspotState.Enabled || state is HotspotState.ClientConnected
+                        }
+                    },
+                    isConnected = {
+                        val state = appStateManager.hotspotState.value
+                        state is HotspotState.Enabled || state is HotspotState.ClientConnected
+                    },
+                    onDisconnect = {
+                        Timber.w("Hotspot disconnected — waiting for reconnect...")
+                        updateNotification("Hotspot lost - reconnecting...")
+                    }
+                )
+
+                // Continuously monitor hotspot state
                 launch {
                     hotspotManager.observeHotspotState().collect { state ->
                         appStateManager.updateHotspotState(state)
+
+                        // Request keyframe when Tesla reconnects
+                        if (state is HotspotState.ClientConnected) {
+                            screenCapture?.requestKeyframe()
+                            updateNotification("Streaming - $serverUrl")
+                        }
+                    }
+                }
+
+                // Monitor battery and warn on low levels
+                launch {
+                    optimizer.observeBatteryState().collect { battery ->
+                        if (battery.isLow && !battery.isCharging) {
+                            Timber.w("Low battery: ${battery.level}% — consider charging")
+                            updateNotification("Streaming - Battery ${battery.level}%")
+                        }
                     }
                 }
 
                 // Wire screen capture video to web server if already capturing
                 screenCapture?.let { capture ->
-                    // Always wire the flow — SharedFlow will just suspend until frames arrive
                     server.videoFlow = capture.videoFrames
                     if (capture.isCapturing) {
                         appStateManager.transition(AppState.Streaming)
@@ -187,9 +267,15 @@ class MainService : Service() {
         capture.startCapture(this, resultCode, data)
         android.util.Log.i("SuperTeslaAA", "Screen capture started, isCapturing=${capture.isCapturing}")
 
-        // Wire video to web server
+        // Wire video to web server (fMP4/WebSocket path)
         webServer?.videoFlow = capture.videoFrames
         android.util.Log.i("SuperTeslaAA", "Video flow wired to webServer, webServer=${webServer != null}")
+
+        // Pass MediaProjection to WebRTC so it can create its own VirtualDisplay
+        capture.mediaProjection?.let { mp ->
+            webRtcManager?.setMediaProjection(mp)
+            android.util.Log.i("SuperTeslaAA", "MediaProjection passed to WebRTC")
+        }
 
         val serverUrl = AppConfig.getServerUrl()
         appStateManager.transition(AppState.Streaming)
@@ -201,6 +287,15 @@ class MainService : Service() {
         Timber.d("Stopping pipeline")
         pipelineJob?.cancel()
         pipelineJob = null
+
+        reconnectionManager?.cancelAll()
+        reconnectionManager = null
+
+        batteryOptimizer?.releaseLocks()
+        batteryOptimizer = null
+
+        webRtcManager?.shutdown()
+        webRtcManager = null
 
         screenCapture?.stopCapture()
         screenCapture = null

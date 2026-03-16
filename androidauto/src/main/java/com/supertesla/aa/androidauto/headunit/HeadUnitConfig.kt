@@ -6,7 +6,7 @@ package com.supertesla.aa.androidauto.headunit
 data class HeadUnitConfig(
     val videoWidth: Int = 1280,
     val videoHeight: Int = 720,
-    val videoDensity: Int = 160,
+    val videoDensity: Int = 120,
     val videoFps: Int = 30,
     val audioSampleRate: Int = 48000,
     val audioChannels: Int = 2,

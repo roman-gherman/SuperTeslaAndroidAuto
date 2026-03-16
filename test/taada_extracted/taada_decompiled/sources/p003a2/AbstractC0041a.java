@@ -1,0 +1,104 @@
+package p003a2;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import androidx.preference.PreferenceManager;
+import fr.sd.taada.proto.AudioConfiguration;
+import fr.sd.taada.proto.AudioStreamType;
+import fr.sd.taada.proto.DisplayType;
+import fr.sd.taada.proto.DriverPosition;
+import fr.sd.taada.proto.HeadUnitInfo;
+import fr.sd.taada.proto.InputSourceService;
+import fr.sd.taada.proto.MediaCodecType;
+import fr.sd.taada.proto.MediaPlaybackStatusService;
+import fr.sd.taada.proto.MediaSinkService;
+import fr.sd.taada.proto.MediaSourceService;
+import fr.sd.taada.proto.SensorSourceService;
+import fr.sd.taada.proto.SensorType;
+import fr.sd.taada.proto.Service;
+import fr.sd.taada.proto.ServiceDiscoveryResponse;
+import fr.sd.taada.proto.TouchScreenType;
+import fr.sd.taada.proto.VideoConfiguration;
+import fr.sd.taada.proto.VideoFrameRateType;
+import java.util.Arrays;
+import p024d2.ProtocolMessage;
+import p054i2.VideoResolutionHelper;
+
+/* JADX INFO: loaded from: classes.dex */
+public abstract class AbstractC0041a {
+    public static ProtocolMessage m13031a(Context context) {
+        SharedPreferences defaultSharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+        int i = defaultSharedPreferences.getInt("dpi", 120);
+        int i3 = Integer.parseInt(defaultSharedPreferences.getString("resolution", "1"));
+        boolean z6 = defaultSharedPreferences.getBoolean("useBT", true);
+        ServiceDiscoveryResponse.Builder builderNewBuilder = ServiceDiscoveryResponse.newBuilder();
+        builderNewBuilder.setHeadunitInfo(HeadUnitInfo.newBuilder().setHeadUnitMake("Google").setHeadUnitModel("Desktop Head Unit").setMake("Google").setModel("Desktop Head Unit").setHeadUnitSoftwareBuild("HUR").setHeadUnitSoftwareVersion("1.1").build());
+        builderNewBuilder.setDriverPosition(defaultSharedPreferences.getBoolean("rhd", false) ? DriverPosition.DRIVER_POSITION_RIGHT : DriverPosition.DRIVER_POSITION_LEFT);
+        Service.Builder builderNewBuilder2 = Service.newBuilder();
+        InputSourceService.Builder builderNewBuilder3 = InputSourceService.newBuilder();
+        builderNewBuilder3.addTouchscreen(InputSourceService.TouchScreen.newBuilder().setType(TouchScreenType.CAPACITIVE).setHeight(VideoResolutionHelper.getVideoHeight(i3).intValue()).setWidth(VideoResolutionHelper.getVideoWidth(i3).intValue()).build());
+        builderNewBuilder3.addAllKeycodesSupported(Arrays.asList(1, 2, 3, 4, 5, 6, 19, 20, 21, 22, 23, 84, 85, 87, 88));
+        builderNewBuilder2.setInputSourceService(builderNewBuilder3.build());
+        builderNewBuilder2.setId(1);
+        builderNewBuilder.addServices(builderNewBuilder2.build());
+        builderNewBuilder2.clear();
+        SensorSourceService.Builder builderNewBuilder4 = SensorSourceService.newBuilder();
+        builderNewBuilder4.addSensors(SensorSourceService.Sensor.newBuilder().setSensorType(SensorType.SENSOR_DRIVING_STATUS_DATA).build());
+        builderNewBuilder4.addSensors(SensorSourceService.Sensor.newBuilder().setSensorType(SensorType.SENSOR_NIGHT_MODE).build());
+        builderNewBuilder4.addSensors(SensorSourceService.Sensor.newBuilder().setSensorType(SensorType.SENSOR_LOCATION).build());
+        builderNewBuilder4.addSensors(SensorSourceService.Sensor.newBuilder().setSensorType(SensorType.SENSOR_PARKING_BRAKE).build());
+        builderNewBuilder2.setSensorSourceService(builderNewBuilder4.build());
+        builderNewBuilder2.setId(2);
+        builderNewBuilder.addServices(builderNewBuilder2.build());
+        builderNewBuilder2.clear();
+        MediaSinkService.Builder builderNewBuilder5 = MediaSinkService.newBuilder();
+        builderNewBuilder5.setAvailableType(MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP);
+        builderNewBuilder5.setDisplayType(DisplayType.DISPLAY_TYPE_MAIN);
+        VideoResolutionHelper.getVideoCodecResolutionType(i3).toString();
+        VideoResolutionHelper.calculateVerticalOffset(i3).toString();
+        VideoResolutionHelper.calculateHorizontalOffset(i3).toString();
+        builderNewBuilder5.addVideoConfigs(VideoConfiguration.newBuilder().setDensity(i).setFrameRate(VideoFrameRateType.VIDEO_FPS_30).setCodecResolution(VideoResolutionHelper.getVideoCodecResolutionType(i3)).setHeightMargin(VideoResolutionHelper.calculateVerticalOffset(i3).intValue()).setWidthMargin(VideoResolutionHelper.calculateHorizontalOffset(i3).intValue()));
+        builderNewBuilder2.setMediaSinkService(builderNewBuilder5.build());
+        builderNewBuilder2.setId(3);
+        builderNewBuilder.addServices(builderNewBuilder2.build());
+        builderNewBuilder2.clear();
+        builderNewBuilder5.clear();
+        MediaCodecType mediaCodecType = MediaCodecType.MEDIA_CODEC_AUDIO_PCM;
+        builderNewBuilder5.setAvailableType(mediaCodecType);
+        builderNewBuilder5.setAudioType(AudioStreamType.AUDIO_STREAM_SYSTEM_AUDIO);
+        builderNewBuilder5.addAudioConfigs(AudioConfiguration.newBuilder().setNumberOfBits(16).setSamplingRate(16000).setNumberOfChannels(1).build());
+        builderNewBuilder2.setMediaSinkService(builderNewBuilder5.build());
+        builderNewBuilder2.setId(6);
+        builderNewBuilder.addServices(builderNewBuilder2.build());
+        if (!z6) {
+            builderNewBuilder2.clear();
+            builderNewBuilder5.clear();
+            builderNewBuilder5.setAvailableType(mediaCodecType);
+            builderNewBuilder5.setAudioType(AudioStreamType.AUDIO_STREAM_GUIDANCE);
+            builderNewBuilder5.addAudioConfigs(AudioConfiguration.newBuilder().setNumberOfBits(16).setSamplingRate(16000).setNumberOfChannels(1).build());
+            builderNewBuilder2.setMediaSinkService(builderNewBuilder5.build());
+            builderNewBuilder2.setId(7);
+            builderNewBuilder.addServices(builderNewBuilder2.build());
+            builderNewBuilder2.clear();
+            builderNewBuilder5.clear();
+            builderNewBuilder5.setAvailableType(mediaCodecType);
+            builderNewBuilder5.setAudioType(AudioStreamType.AUDIO_STREAM_MEDIA);
+            builderNewBuilder5.addAudioConfigs(AudioConfiguration.newBuilder().setNumberOfBits(16).setSamplingRate(48000).setNumberOfChannels(2).build());
+            builderNewBuilder2.setMediaSinkService(builderNewBuilder5.build());
+            builderNewBuilder2.setId(5);
+            builderNewBuilder.addServices(builderNewBuilder2.build());
+        }
+        builderNewBuilder2.clear();
+        MediaSourceService.Builder builderNewBuilder6 = MediaSourceService.newBuilder();
+        builderNewBuilder6.setAvailableType(mediaCodecType);
+        builderNewBuilder6.setAudioConfig(AudioConfiguration.newBuilder().setNumberOfBits(16).setSamplingRate(16000).setNumberOfChannels(1).build());
+        builderNewBuilder2.setMediaSourceService(builderNewBuilder6.build());
+        builderNewBuilder2.setId(4);
+        builderNewBuilder.addServices(builderNewBuilder2.build());
+        builderNewBuilder2.clear();
+        builderNewBuilder2.setMediaPlaybackService(MediaPlaybackStatusService.newBuilder().build());
+        builderNewBuilder2.setId(9);
+        builderNewBuilder.addServices(builderNewBuilder2.build());
+        return new ProtocolMessage((byte) 0, (byte) 3, 6, builderNewBuilder);
+    }
+}

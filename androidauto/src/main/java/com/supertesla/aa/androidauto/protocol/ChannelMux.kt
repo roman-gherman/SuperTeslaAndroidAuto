@@ -57,6 +57,7 @@ class ChannelMux(
                 }
 
                 val decryptedFrame = frame.copy(payload = decryptedPayload)
+                Timber.d("MUX: ch=${decryptedFrame.channel} flags=0x${decryptedFrame.flags.toString(16)} msgType=0x${decryptedFrame.messageType.toString(16)} payload=${decryptedPayload.size}b")
 
                 // Handle fragmentation
                 when {

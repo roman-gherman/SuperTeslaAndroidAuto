@@ -1,0 +1,156 @@
+package fr.sd.taada.proto;
+
+import com.google.protobuf.Internal;
+
+/* JADX INFO: loaded from: classes2.dex */
+public enum RadioMessageId implements Internal.EnumLite {
+    RADIO_MESSAGE_ACTIVE_RADIO_NOTIFICATION(32769),
+    RADIO_MESSAGE_SELECT_ACTIVE_RADIO_REQUEST(32770),
+    RADIO_MESSAGE_STEP_CHANNEL_REQUEST(32771),
+    RADIO_MESSAGE_STEP_CHANNEL_RESPONSE(32772),
+    RADIO_MESSAGE_SEEK_STATION_REQUEST(32773),
+    RADIO_MESSAGE_SEEK_STATION_RESPONSE(32774),
+    RADIO_MESSAGE_SCAN_STATIONS_REQUEST(32775),
+    RADIO_MESSAGE_SCAN_STATIONS_RESPONSE(32776),
+    RADIO_MESSAGE_TUNE_TO_STATION_REQUEST(32777),
+    RADIO_MESSAGE_TUNE_TO_STATION_RESPONSE(32778),
+    RADIO_MESSAGE_GET_PROGRAM_LIST_REQUEST(32779),
+    RADIO_MESSAGE_GET_PROGRAM_LIST_RESPONSE(RADIO_MESSAGE_GET_PROGRAM_LIST_RESPONSE_VALUE),
+    RADIO_MESSAGE_STATION_PRESETS_NOTIFICATION(RADIO_MESSAGE_STATION_PRESETS_NOTIFICATION_VALUE),
+    RADIO_MESSAGE_CANCEL_OPERATIONS_REQUEST(RADIO_MESSAGE_CANCEL_OPERATIONS_REQUEST_VALUE),
+    RADIO_MESSAGE_CANCEL_OPERATIONS_RESPONSE(RADIO_MESSAGE_CANCEL_OPERATIONS_RESPONSE_VALUE),
+    RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_REQUEST(RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_REQUEST_VALUE),
+    RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_RESPONSE(RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_RESPONSE_VALUE),
+    RADIO_MESSAGE_RADIO_STATION_INFO_NOTIFICATION(RADIO_MESSAGE_RADIO_STATION_INFO_NOTIFICATION_VALUE),
+    RADIO_MESSAGE_MUTE_RADIO_REQUEST(RADIO_MESSAGE_MUTE_RADIO_REQUEST_VALUE),
+    RADIO_MESSAGE_MUTE_RADIO_RESPONSE(RADIO_MESSAGE_MUTE_RADIO_RESPONSE_VALUE),
+    RADIO_MESSAGE_GET_TRAFFIC_UPDATE_REQUEST(RADIO_MESSAGE_GET_TRAFFIC_UPDATE_REQUEST_VALUE),
+    RADIO_MESSAGE_GET_TRAFFIC_UPDATE_RESPONSE(RADIO_MESSAGE_GET_TRAFFIC_UPDATE_RESPONSE_VALUE),
+    RADIO_MESSAGE_RADIO_SOURCE_REQUEST(RADIO_MESSAGE_RADIO_SOURCE_REQUEST_VALUE),
+    RADIO_MESSAGE_RADIO_SOURCE_RESPONSE(RADIO_MESSAGE_RADIO_SOURCE_RESPONSE_VALUE),
+    RADIO_MESSAGE_STATE_NOTIFICATION(RADIO_MESSAGE_STATE_NOTIFICATION_VALUE);
+
+    public static final int RADIO_MESSAGE_ACTIVE_RADIO_NOTIFICATION_VALUE = 32769;
+    public static final int RADIO_MESSAGE_CANCEL_OPERATIONS_REQUEST_VALUE = 32782;
+    public static final int RADIO_MESSAGE_CANCEL_OPERATIONS_RESPONSE_VALUE = 32783;
+    public static final int RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_REQUEST_VALUE = 32784;
+    public static final int RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_RESPONSE_VALUE = 32785;
+    public static final int RADIO_MESSAGE_GET_PROGRAM_LIST_REQUEST_VALUE = 32779;
+    public static final int RADIO_MESSAGE_GET_PROGRAM_LIST_RESPONSE_VALUE = 32780;
+    public static final int RADIO_MESSAGE_GET_TRAFFIC_UPDATE_REQUEST_VALUE = 32789;
+    public static final int RADIO_MESSAGE_GET_TRAFFIC_UPDATE_RESPONSE_VALUE = 32790;
+    public static final int RADIO_MESSAGE_MUTE_RADIO_REQUEST_VALUE = 32787;
+    public static final int RADIO_MESSAGE_MUTE_RADIO_RESPONSE_VALUE = 32788;
+    public static final int RADIO_MESSAGE_RADIO_SOURCE_REQUEST_VALUE = 32791;
+    public static final int RADIO_MESSAGE_RADIO_SOURCE_RESPONSE_VALUE = 32792;
+    public static final int RADIO_MESSAGE_RADIO_STATION_INFO_NOTIFICATION_VALUE = 32786;
+    public static final int RADIO_MESSAGE_SCAN_STATIONS_REQUEST_VALUE = 32775;
+    public static final int RADIO_MESSAGE_SCAN_STATIONS_RESPONSE_VALUE = 32776;
+    public static final int RADIO_MESSAGE_SEEK_STATION_REQUEST_VALUE = 32773;
+    public static final int RADIO_MESSAGE_SEEK_STATION_RESPONSE_VALUE = 32774;
+    public static final int RADIO_MESSAGE_SELECT_ACTIVE_RADIO_REQUEST_VALUE = 32770;
+    public static final int RADIO_MESSAGE_STATE_NOTIFICATION_VALUE = 32793;
+    public static final int RADIO_MESSAGE_STATION_PRESETS_NOTIFICATION_VALUE = 32781;
+    public static final int RADIO_MESSAGE_STEP_CHANNEL_REQUEST_VALUE = 32771;
+    public static final int RADIO_MESSAGE_STEP_CHANNEL_RESPONSE_VALUE = 32772;
+    public static final int RADIO_MESSAGE_TUNE_TO_STATION_REQUEST_VALUE = 32777;
+    public static final int RADIO_MESSAGE_TUNE_TO_STATION_RESPONSE_VALUE = 32778;
+    private static final Internal.EnumLiteMap<RadioMessageId> internalValueMap = new Internal.EnumLiteMap<RadioMessageId>() { // from class: fr.sd.taada.proto.RadioMessageId.1
+        @Override // com.google.protobuf.Internal.EnumLiteMap
+        public RadioMessageId findValueByNumber(int i) {
+            return RadioMessageId.forNumber(i);
+        }
+    };
+    private final int value;
+
+    public static final class RadioMessageIdVerifier implements Internal.EnumVerifier {
+        static final Internal.EnumVerifier INSTANCE = new RadioMessageIdVerifier();
+
+        private RadioMessageIdVerifier() {
+        }
+
+        @Override // com.google.protobuf.Internal.EnumVerifier
+        public boolean isInRange(int i) {
+            return RadioMessageId.forNumber(i) != null;
+        }
+    }
+
+    RadioMessageId(int i) {
+        this.value = i;
+    }
+
+    public static RadioMessageId forNumber(int i) {
+        switch (i) {
+            case 32769:
+                return RADIO_MESSAGE_ACTIVE_RADIO_NOTIFICATION;
+            case 32770:
+                return RADIO_MESSAGE_SELECT_ACTIVE_RADIO_REQUEST;
+            case 32771:
+                return RADIO_MESSAGE_STEP_CHANNEL_REQUEST;
+            case 32772:
+                return RADIO_MESSAGE_STEP_CHANNEL_RESPONSE;
+            case 32773:
+                return RADIO_MESSAGE_SEEK_STATION_REQUEST;
+            case 32774:
+                return RADIO_MESSAGE_SEEK_STATION_RESPONSE;
+            case 32775:
+                return RADIO_MESSAGE_SCAN_STATIONS_REQUEST;
+            case 32776:
+                return RADIO_MESSAGE_SCAN_STATIONS_RESPONSE;
+            case 32777:
+                return RADIO_MESSAGE_TUNE_TO_STATION_REQUEST;
+            case 32778:
+                return RADIO_MESSAGE_TUNE_TO_STATION_RESPONSE;
+            case 32779:
+                return RADIO_MESSAGE_GET_PROGRAM_LIST_REQUEST;
+            case RADIO_MESSAGE_GET_PROGRAM_LIST_RESPONSE_VALUE:
+                return RADIO_MESSAGE_GET_PROGRAM_LIST_RESPONSE;
+            case RADIO_MESSAGE_STATION_PRESETS_NOTIFICATION_VALUE:
+                return RADIO_MESSAGE_STATION_PRESETS_NOTIFICATION;
+            case RADIO_MESSAGE_CANCEL_OPERATIONS_REQUEST_VALUE:
+                return RADIO_MESSAGE_CANCEL_OPERATIONS_REQUEST;
+            case RADIO_MESSAGE_CANCEL_OPERATIONS_RESPONSE_VALUE:
+                return RADIO_MESSAGE_CANCEL_OPERATIONS_RESPONSE;
+            case RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_REQUEST_VALUE:
+                return RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_REQUEST;
+            case RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_RESPONSE_VALUE:
+                return RADIO_MESSAGE_CONFIGURE_CHANNEL_SPACING_RESPONSE;
+            case RADIO_MESSAGE_RADIO_STATION_INFO_NOTIFICATION_VALUE:
+                return RADIO_MESSAGE_RADIO_STATION_INFO_NOTIFICATION;
+            case RADIO_MESSAGE_MUTE_RADIO_REQUEST_VALUE:
+                return RADIO_MESSAGE_MUTE_RADIO_REQUEST;
+            case RADIO_MESSAGE_MUTE_RADIO_RESPONSE_VALUE:
+                return RADIO_MESSAGE_MUTE_RADIO_RESPONSE;
+            case RADIO_MESSAGE_GET_TRAFFIC_UPDATE_REQUEST_VALUE:
+                return RADIO_MESSAGE_GET_TRAFFIC_UPDATE_REQUEST;
+            case RADIO_MESSAGE_GET_TRAFFIC_UPDATE_RESPONSE_VALUE:
+                return RADIO_MESSAGE_GET_TRAFFIC_UPDATE_RESPONSE;
+            case RADIO_MESSAGE_RADIO_SOURCE_REQUEST_VALUE:
+                return RADIO_MESSAGE_RADIO_SOURCE_REQUEST;
+            case RADIO_MESSAGE_RADIO_SOURCE_RESPONSE_VALUE:
+                return RADIO_MESSAGE_RADIO_SOURCE_RESPONSE;
+            case RADIO_MESSAGE_STATE_NOTIFICATION_VALUE:
+                return RADIO_MESSAGE_STATE_NOTIFICATION;
+            default:
+                return null;
+        }
+    }
+
+    public static Internal.EnumLiteMap<RadioMessageId> internalGetValueMap() {
+        return internalValueMap;
+    }
+
+    public static Internal.EnumVerifier internalGetVerifier() {
+        return RadioMessageIdVerifier.INSTANCE;
+    }
+
+    @Override // com.google.protobuf.Internal.EnumLite
+    public final int getNumber() {
+        return this.value;
+    }
+
+    @Deprecated
+    public static RadioMessageId valueOf(int i) {
+        return forNumber(i);
+    }
+}

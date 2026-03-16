@@ -78,6 +78,19 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
+            // Audio
+            SectionHeader("Audio")
+            ActionSetting("Bluetooth Settings") {
+                context.startActivity(
+                    Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                )
+            }
+            InfoSetting("How it works", "Pair phone via BT for audio")
+
+            Spacer(Modifier.height(16.dp))
+
             // Advanced
             SectionHeader("Advanced")
             SwitchSetting("Debug Overlay", showDebug) {
@@ -93,7 +106,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             // About
             SectionHeader("About")
             InfoSetting("Version", "0.1.0")
-            InfoSetting("URL", AppConfig.getServerUrl())
+            InfoSetting("Domain", AppConfig.PUBLIC_DOMAIN)
+            InfoSetting("Fallback URL", AppConfig.getServerUrlFallback())
             InfoSetting("Hotspot IP", AppConfig.detectedHotspotIp ?: "Not detected")
 
             Spacer(Modifier.height(40.dp))

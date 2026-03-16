@@ -40,6 +40,8 @@ class WebServer(
     var videoFlow: Flow<ByteArray>? = null
     var touchInputRelay: TouchInputRelay? = null
     var signalingHandler: SignalingHandler? = null
+    var onClientConnected: (() -> Unit)? = null
+    var diagnosticInfo: (() -> String)? = null
 
     val isRunning: Boolean
         get() = server != null
@@ -117,10 +119,18 @@ class WebServer(
                     val handler = videoStreamHandler
                     val clients = handler?.connectedClients ?: 0
                     val frames = handler?.totalFramesSent ?: 0
+                    val hasVideoFlow = videoFlow != null
+                    val signaling = signalingHandler != null
+                    // Test if video flow is actually producing frames
                     call.respondText(
-                        """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames}""",
+                        """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames,"hasVideoFlow":$hasVideoFlow,"hasSignaling":$signaling,"flowType":"${videoFlow?.javaClass?.simpleName ?: "null"}"}""",
                         ContentType.Application.Json
                     )
+                }
+
+                get("/diag") {
+                    val info = diagnosticInfo?.invoke() ?: "{}"
+                    call.respondText(info, ContentType.Application.Json)
                 }
 
                 // MJPEG fallback stream
@@ -157,6 +167,7 @@ class WebServer(
                 // Unified WebSocket: video streaming (binary out) + touch events (text in)
                 webSocket("/ws") {
                     Timber.d("WebSocket client connected")
+                    onClientConnected?.invoke()
                     val handler = videoStreamHandler
                     val relay = touchInputRelay
 
@@ -202,6 +213,34 @@ class WebServer(
         }.start(wait = false)
 
         Timber.i("Web server started on $bindAddress:$port")
+
+        // Also listen on port 80 so domain works without :8080 (e.g., app.supertesla.top)
+        if (port != 80) {
+            try {
+                serverPort80 = embeddedServer(Netty, port = 80, host = bindAddress) {
+                    install(CORS) {
+                        anyHost()
+                        allowMethod(HttpMethod.Get)
+                        allowMethod(HttpMethod.Post)
+                        allowHeader(HttpHeaders.ContentType)
+                    }
+
+                    routing {
+                        // Redirect all requests to the main server on primary port
+                        get("{...}") {
+                            call.respondText(
+                                """<!DOCTYPE html><html><head><script>location.replace("http://"+location.hostname+":$port"+location.pathname+location.search)</script></head></html>""",
+                                ContentType.Text.Html
+                            )
+                        }
+                    }
+                }.start(wait = false)
+                Timber.i("Port 80 redirect server started")
+            } catch (e: Exception) {
+                Timber.w("Port 80 not available (${e.message}) — use :$port directly")
+                serverPort80 = null
+            }
+        }
     }
 
     fun stop() {

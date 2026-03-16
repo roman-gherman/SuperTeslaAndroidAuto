@@ -1,6 +1,7 @@
 package com.supertesla.aa.network.webrtc
 
 import android.content.Context
+import android.media.projection.MediaProjection
 import com.supertesla.aa.network.websocket.TouchInputRelay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -27,9 +28,20 @@ class WebRtcManager(private val context: Context) {
     private val localIceCandidates = mutableListOf<IceCandidate>()
     private var touchRelay: TouchInputRelay? = null
     private var videoCapturer: AaVideoCapturer? = null
+    private var mediaProjection: MediaProjection? = null
 
     val isInitialized: Boolean get() = factory != null
     val isConnected: Boolean get() = peerConnection?.connectionState() == PeerConnection.PeerConnectionState.CONNECTED
+
+    /**
+     * Set the shared MediaProjection so WebRTC can create its own VirtualDisplay
+     * for screen capture. Must be called before the first offer is handled.
+     */
+    fun setMediaProjection(projection: MediaProjection) {
+        mediaProjection = projection
+        videoCapturer?.setMediaProjection(projection)
+        Timber.i("WebRtcManager: MediaProjection set")
+    }
 
     fun initialize() {
         Timber.i("Initializing WebRTC")
@@ -131,6 +143,12 @@ class WebRtcManager(private val context: Context) {
             videoSource!!.capturerObserver
         )
 
+        // Pass MediaProjection if already available
+        mediaProjection?.let { videoCapturer!!.setMediaProjection(it) }
+
+        // Start capture — VirtualDisplay will be created when MediaProjection is available
+        videoCapturer!!.startCapture(1280, 720, 30)
+
         videoTrack = factory.createVideoTrack("aa-video-0", videoSource)
         videoTrack?.setEnabled(true)
         peerConnection?.addTrack(videoTrack, listOf("aa-stream"))
@@ -227,11 +245,6 @@ class WebRtcManager(private val context: Context) {
         return localIceCandidates.map {
             IceCandidateInfo(it.sdp, it.sdpMid, it.sdpMLineIndex)
         }
-    }
-
-    /** Feed a video frame from the AA emulator */
-    fun feedVideoFrame(width: Int, height: Int, data: ByteArray, timestampNs: Long) {
-        videoCapturer?.feedFrame(width, height, data, timestampNs)
     }
 
     fun shutdown() {

@@ -27,7 +27,9 @@ class ScreenCaptureManager(
     private val fps: Int = 30,
     private val bitrate: Int = 4_000_000
 ) {
-    private var mediaProjection: MediaProjection? = null
+    /** Shared MediaProjection — exposed so WebRTC can create its own VirtualDisplay. */
+    var mediaProjection: MediaProjection? = null
+        private set
     private var virtualDisplay: VirtualDisplay? = null
     private var encoder: MediaCodec? = null
     private var encoderSurface: Surface? = null
@@ -36,12 +38,19 @@ class ScreenCaptureManager(
     private var encoderThread: HandlerThread? = null
 
     private val _videoFrames = MutableSharedFlow<ByteArray>(
-        replay = 0,
+        replay = 2, // Replay last 2 frames (SPS/PPS config + keyframe) for new subscribers
         extraBufferCapacity = 30
     )
+    // Cache the codec config (SPS+PPS) to re-emit after keyframe request
+    @Volatile
+    private var codecConfig: ByteArray? = null
     val videoFrames: SharedFlow<ByteArray> = _videoFrames
 
     val isCapturing: Boolean get() = running
+
+    @Volatile
+    var totalFramesEncoded: Long = 0L
+        private set
 
     companion object {
         private const val TAG = "SuperTeslaCapture"
@@ -139,7 +148,7 @@ class ScreenCaptureManager(
 
             while (running) {
                 try {
-                    val index = codec.dequeueOutputBuffer(bufferInfo, 10000)
+                    val index = codec.dequeueOutputBuffer(bufferInfo, 33000) // ~1 frame at 30fps
                     if (index >= 0) {
                         val buf = codec.getOutputBuffer(index)
                         if (buf != null && bufferInfo.size > 0) {
@@ -147,8 +156,15 @@ class ScreenCaptureManager(
                             buf.position(bufferInfo.offset)
                             buf.get(data)
 
+                            // Cache codec config (SPS+PPS) for re-emission
+                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                                codecConfig = data.copyOf()
+                                Log.i(TAG, "Codec config cached: ${data.size} bytes")
+                            }
+
                             val emitted = _videoFrames.tryEmit(data)
                             frameCount++
+                            totalFramesEncoded = frameCount
 
                             if (frameCount == 1L) {
                                 Log.i(TAG, "First frame emitted! size=${data.size} flags=${bufferInfo.flags}")
@@ -161,8 +177,13 @@ class ScreenCaptureManager(
                     } else if (index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                         Log.i(TAG, "Encoder output format changed: ${codec.outputFormat}")
                     }
+                    // index == INFO_TRY_AGAIN_LATER (-1) is normal when screen is static
+                } catch (e: IllegalStateException) {
+                    // Codec in transient state — retry instead of crashing
+                    if (running) Log.w(TAG, "Encoder transient error, retrying: ${e.message}")
+                    try { Thread.sleep(10) } catch (_: Exception) {}
                 } catch (e: Exception) {
-                    if (running) Log.w(TAG, "Encoder error: ${e.message}")
+                    if (running) Log.e(TAG, "Encoder fatal error: ${e.message}")
                     break
                 }
             }
@@ -194,6 +215,12 @@ class ScreenCaptureManager(
 
     fun requestKeyframe() {
         try {
+            // Re-emit cached codec config (SPS+PPS) so new subscribers get it
+            codecConfig?.let { config ->
+                _videoFrames.tryEmit(config)
+                Log.d(TAG, "Re-emitted cached codec config (${config.size} bytes)")
+            }
+            // Request an IDR frame from the encoder
             val params = android.os.Bundle()
             params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
             encoder?.setParameters(params)

@@ -63,15 +63,21 @@ object SensorMessageType {
 /**
  * Well-known channel IDs matching the Kotlin headunit implementation.
  */
+/**
+ * Channel IDs matching TaaDa's service discovery.
+ * These are the IDs used in ChannelOpenRequest and for mux routing.
+ * They correspond to the service_id in the ServiceDiscoveryResponse.
+ */
 object ChannelId {
     const val CONTROL: Int = 0
-    const val SENSOR: Int = 1
-    const val VIDEO: Int = 2
-    const val INPUT: Int = 3
-    const val AUDIO_SPEECH: Int = 4
-    const val AUDIO_SYSTEM: Int = 5
-    const val AUDIO_MEDIA: Int = 6
-    const val MIC: Int = 7
+    const val INPUT: Int = 1
+    const val SENSOR: Int = 2
+    const val VIDEO: Int = 3
+    const val MIC: Int = 4
+    const val AUDIO_MEDIA: Int = 5
+    const val AUDIO_SYSTEM: Int = 6
+    const val AUDIO_SPEECH: Int = 7  // guidance/speech
+    const val PLAYBACK_STATUS: Int = 9
 }
 
 /**

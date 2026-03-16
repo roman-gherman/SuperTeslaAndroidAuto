@@ -34,7 +34,7 @@ import com.supertesla.aa.ui.theme.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-private const val PAGE_COUNT = 3
+private const val PAGE_COUNT = 4
 
 @Composable
 fun SetupWizardScreen(onComplete: () -> Unit) {
@@ -69,7 +69,7 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
         if (hotspotOn && !hotspotAutoAdvanced && currentPage == 1) {
             hotspotAutoAdvanced = true
             kotlinx.coroutines.delay(800)
-            pagerState.scrollToPage(2)
+            pagerState.scrollToPage(2) // Advance to Bluetooth Audio page
         }
     }
 
@@ -117,7 +117,8 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
                 when (page) {
                     0 -> WelcomePage()
                     1 -> HotspotPage(context, hotspotOn)
-                    2 -> ConnectTeslaPage()
+                    2 -> BluetoothAudioPage(context)
+                    3 -> ConnectTeslaPage()
                 }
             }
 
@@ -261,9 +262,54 @@ private fun HotspotPage(context: android.content.Context, hotspotOn: Boolean) {
 }
 
 @Composable
+private fun BluetoothAudioPage(context: android.content.Context) {
+    WizardPage(
+        title = "Bluetooth Audio",
+        subtitle = "Hear navigation & music"
+    ) {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "Pair your phone with your Tesla\nvia Bluetooth for audio.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = TeslaWhite.copy(alpha = 0.8f),
+            lineHeight = 28.sp
+        )
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = "Waze directions, Spotify, calls\u2014\nall play through your car speakers.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = TeslaGray,
+            lineHeight = 26.sp
+        )
+        Spacer(Modifier.height(32.dp))
+        OutlinedButton(
+            onClick = {
+                context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                })
+            },
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(56.dp),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Text("Open Bluetooth Settings", style = MaterialTheme.typography.bodyLarge)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "If already paired, just tap Next.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TeslaDimText
+        )
+    }
+}
+
+@Composable
 private fun ConnectTeslaPage() {
-    val url = AppConfig.getServerUrl()
-    val fallback = "http://${AppConfig.detectedHotspotIp ?: AppConfig.DEFAULT_VIRTUAL_IP}:${AppConfig.SERVER_PORT}"
+    val primaryUrl = AppConfig.getServerUrl()
+    val fallbackUrl = AppConfig.getServerUrlFallback()
 
     WizardPage(
         title = "Open in Tesla",
@@ -281,7 +327,7 @@ private fun ConnectTeslaPage() {
             shape = MaterialTheme.shapes.large
         ) {
             Text(
-                text = url,
+                text = AppConfig.PUBLIC_DOMAIN,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 28.dp, vertical = 20.dp),
@@ -294,7 +340,7 @@ private fun ConnectTeslaPage() {
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "or: $fallback",
+            text = "or: $fallbackUrl",
             style = MaterialTheme.typography.labelMedium,
             color = TeslaDimText
         )

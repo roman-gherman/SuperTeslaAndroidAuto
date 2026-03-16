@@ -14,6 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -80,11 +82,13 @@ fun PermissionsScreen(onBack: () -> Unit = {}, onAllGranted: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
             TextButton(onClick = onBack) {
-                Text("< Back", color = TeslaBlue)
+                Text("< Back", color = TeslaBlue, style = MaterialTheme.typography.bodyLarge)
             }
             Spacer(Modifier.height(8.dp))
             Text(

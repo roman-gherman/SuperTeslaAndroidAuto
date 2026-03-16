@@ -8,9 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
 import com.supertesla.aa.MainActivity
 import com.supertesla.aa.androidauto.headunit.AAHeadUnitEmulator
@@ -97,8 +95,7 @@ class TransporterService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
 
     // Heartbeat
-    private val heartbeatHandler = Handler(Looper.getMainLooper())
-    private var heartbeatRunnable: Runnable? = null
+    private var heartbeatJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -319,18 +316,22 @@ class TransporterService : Service() {
 
     private fun startHeartbeat(intervalMs: Long) {
         stopHeartbeat()
-        heartbeatRunnable = object : Runnable {
-            override fun run() {
-                emulator?.sendHeartbeat()
-                heartbeatHandler.postDelayed(this, intervalMs)
+        heartbeatJob = serviceScope.launch(Dispatchers.IO) {
+            while (true) {
+                try {
+                    emulator?.sendHeartbeat()
+                } catch (e: Exception) {
+                    Timber.w(e, "Heartbeat failed")
+                    break
+                }
+                kotlinx.coroutines.delay(intervalMs)
             }
         }
-        heartbeatHandler.post(heartbeatRunnable!!)
     }
 
     private fun stopHeartbeat() {
-        heartbeatRunnable?.let { heartbeatHandler.removeCallbacks(it) }
-        heartbeatRunnable = null
+        heartbeatJob?.cancel()
+        heartbeatJob = null
     }
 
     private fun startWebSocketServers(basePort: Int) {
@@ -349,10 +350,10 @@ class TransporterService : Service() {
                     }
                     "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
                     "PING" -> {
-                        // Schedule video focus toggle after 3s (TaaDa behavior)
-                        Handler(Looper.getMainLooper()).postDelayed({
+                        serviceScope.launch {
+                            kotlinx.coroutines.delay(3000)
                             nalStreamManager?.toggleVideoFocus(true)
-                        }, 3000)
+                        }
                     }
                     "CONNECTED" -> {
                         // Browser connected — request keyframe when video starts
