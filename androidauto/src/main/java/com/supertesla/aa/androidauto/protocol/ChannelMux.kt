@@ -106,7 +106,13 @@ class ChannelMux(
     }
 
     private suspend fun dispatch(frame: AapFramer.AapFrame) {
-        val handler = handlers[frame.channel]
+        // Frames with the CONTROL flag (0x04) are control messages (e.g. ChannelOpenRequest)
+        // that arrive on the target channel, not channel 0. Route them to the control handler.
+        val handler = if (frame.isControl && frame.channel != 0) {
+            handlers[0] ?: handlers[frame.channel]
+        } else {
+            handlers[frame.channel]
+        }
         if (handler != null) {
             try {
                 handler.onFrame(frame)

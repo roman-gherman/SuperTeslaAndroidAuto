@@ -37,7 +37,7 @@ object ServiceDiscovery {
         val model: String = "Desktop Head Unit",
         val huMake: String = "Google",
         val huModel: String = "Desktop Head Unit",
-        val swBuild: String = "SWB1",
+        val swBuild: String = "HUR",
         val swVersion: String = "1.1"
     )
 
@@ -62,7 +62,7 @@ object ServiceDiscovery {
         mediaAudio: AudioConfig = AudioConfig(sampleRate = 48000, channelCount = 2),
         speechAudio: AudioConfig = AudioConfig(sampleRate = 16000, bitDepth = 16, channelCount = 1),
         systemAudio: AudioConfig = AudioConfig(sampleRate = 16000, bitDepth = 16, channelCount = 1),
-        includeAudioSinks: Boolean = true
+        includeAudioSinks: Boolean = false
     ): ByteArray {
         val out = ByteArrayOutputStream()
 
@@ -75,8 +75,8 @@ object ServiceDiscovery {
             ProtoEncoder.writeStringField(hu, 7, huInfo.swBuild)    // sw_build
             ProtoEncoder.writeStringField(hu, 8, huInfo.swVersion)  // sw_version
         }
-        // Driver position (field 6)
-        ProtoEncoder.writeVarintField(out, 6, 1) // LEFT
+        // Driver position (field 6): LEFT=0 (proto3 default, omitted), RIGHT=1
+        // TaaDa uses LEFT (0) which proto3 omits — don't write this field for LEFT
 
         // === Service 1: InputSourceService (field 4 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
@@ -103,7 +103,7 @@ object ServiceDiscovery {
             // SensorSourceService = Service field 2
             ProtoEncoder.writeEmbeddedMessage(svc, 2) { sensor ->
                 // sensors = field 1 (repeated embedded Sensor)
-                for (sensorType in intArrayOf(11, 10, 1, 12)) { // DRIVING_STATUS, NIGHT, LOCATION, PARKING_BRAKE
+                for (sensorType in intArrayOf(13, 10, 1, 7)) { // DRIVING_STATUS=13, NIGHT=10, LOCATION=1, PARKING_BRAKE=7
                     ProtoEncoder.writeEmbeddedMessage(sensor, 1) { s ->
                         ProtoEncoder.writeVarintField(s, 1, sensorType.toLong()) // sensor_type
                     }
@@ -116,8 +116,8 @@ object ServiceDiscovery {
             ProtoEncoder.writeVarintField(svc, 1, 3) // service id = 3
             // MediaSinkService = Service field 3
             ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
-                ProtoEncoder.writeVarintField(sink, 1, 6)  // available_type = VIDEO_H264_BP (6)
-                ProtoEncoder.writeVarintField(sink, 7, 1)  // display_type = MAIN (1)
+                ProtoEncoder.writeVarintField(sink, 1, 3)  // available_type = MEDIA_CODEC_VIDEO_H264_BP (3)
+                // display_type = DISPLAY_TYPE_MAIN (0) — proto3 default, omitted
                 // video_configs = field 4
                 // VideoConfiguration: 1=codec_resolution(enum), 2=frame_rate(enum),
                 //   3=width_margin, 4=height_margin, 5=density
@@ -226,7 +226,7 @@ object ServiceDiscovery {
     fun buildDrivingStatusEvent(status: Int = 0): ByteArray {
         val out = ByteArrayOutputStream()
         ProtoEncoder.writeEmbeddedMessage(out, 1) { event ->
-            ProtoEncoder.writeVarintField(event, 1, 11)
+            ProtoEncoder.writeVarintField(event, 1, 13) // SENSOR_DRIVING_STATUS_DATA
             ProtoEncoder.writeEmbeddedMessage(event, 4) { ds ->
                 ProtoEncoder.writeVarintField(ds, 1, status.toLong())
             }

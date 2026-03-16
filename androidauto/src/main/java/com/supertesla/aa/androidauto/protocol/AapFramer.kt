@@ -43,15 +43,23 @@ class AapFramer {
         val isEncrypted: Boolean get() = flags and FLAG_ENCRYPTED != 0
         val isControl: Boolean get() = flags and FLAG_CONTROL != 0
 
-        /** Extract the 2-byte message type ID from start of payload */
+        /**
+         * Extract the 2-byte message type ID from start of payload.
+         * Only valid for FIRST or BULK frames — MIDDLE/LAST frames don't have a message type prefix.
+         */
         val messageType: Int
-            get() = if (payload.size >= 2) {
+            get() = if (isFirst && payload.size >= 2) {
                 ((payload[0].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
-            } else -1
+            } else 0
 
-        /** Get message body (payload after the 2-byte message type ID) */
+        /**
+         * Get message body (payload after the 2-byte message type ID).
+         * For MIDDLE/LAST frames, the entire payload is body data (no message type prefix).
+         */
         val messageBody: ByteArray
-            get() = if (payload.size > 2) payload.copyOfRange(2, payload.size) else ByteArray(0)
+            get() = if (isFirst && payload.size > 2) payload.copyOfRange(2, payload.size)
+                    else if (!isFirst) payload
+                    else ByteArray(0)
 
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -73,6 +81,12 @@ class AapFramer {
 
     /**
      * Read a single AAP frame from the input stream.
+     *
+     * For FIRST frames (flags & 0x01 != 0, but not BULK), the wire format has
+     * 4 extra bytes (total message length) that are NOT included in the declared
+     * payload length. TaaDa's MessageHandler.readData() adds +4 to the read
+     * length for flags == 0x01 or 0x09 (FIRST or FIRST|ENCRYPTED).
+     *
      * @throws IOException on read error or EOF
      */
     fun readFrame(input: InputStream): AapFrame {
@@ -87,13 +101,14 @@ class AapFramer {
             throw IOException("Frame payload too large: $payloadLength bytes (max $MAX_FRAME_PAYLOAD)")
         }
 
-        // If this is a FIRST frame (but not BULK), there are 4 extra bytes for total message length
-        var totalLength = 0
-        val actualPayloadOffset: Int
-        if ((flags and FLAG_FIRST != 0) && (flags and FLAG_LAST == 0) && payloadLength >= 4) {
-            // Read the payload which includes the 4-byte total length prefix
-            val rawPayload = readExactly(input, payloadLength)
-            totalLength = ((rawPayload[0].toInt() and 0xFF) shl 24) or
+        val isFirst = flags and FLAG_FIRST != 0
+        val isLast = flags and FLAG_LAST != 0
+
+        // FIRST-only frames (not BULK): read payloadLength + 4 extra bytes for total message length
+        if (isFirst && !isLast) {
+            val readLen = payloadLength + 4
+            val rawPayload = readExactly(input, readLen)
+            val totalLength = ((rawPayload[0].toInt() and 0xFF) shl 24) or
                     ((rawPayload[1].toInt() and 0xFF) shl 16) or
                     ((rawPayload[2].toInt() and 0xFF) shl 8) or
                     (rawPayload[3].toInt() and 0xFF)
@@ -102,7 +117,7 @@ class AapFramer {
         }
 
         val payload = if (payloadLength > 0) readExactly(input, payloadLength) else ByteArray(0)
-        return AapFrame(channel, flags, payload, totalLength)
+        return AapFrame(channel, flags, payload, 0)
     }
 
     /**

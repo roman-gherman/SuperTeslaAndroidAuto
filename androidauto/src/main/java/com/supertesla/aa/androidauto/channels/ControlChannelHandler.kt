@@ -49,12 +49,14 @@ class ControlChannelHandler(
 
             MessageType.CHANNEL_OPEN_REQUEST -> {
                 val fields = ProtoEncoder.readFields(body)
-                val channelId = fields.firstOrNull { it.fieldNumber == 2 }?.intValue ?: -1
+                // The channel from the frame itself is the target channel
+                val channelId = frame.channel
                 val serviceId = fields.firstOrNull { it.fieldNumber == 1 }?.intValue ?: -1
                 Timber.i("CTRL: ChannelOpenRequest — channel=$channelId serviceId=$serviceId fields=${fields.map { "f${it.fieldNumber}=${it.intValue}" }}")
 
+                // TaaDa sends the response on the same channel as the request
                 val response = ServiceDiscovery.buildChannelOpenResponse(status = 0)
-                mux.sendEncrypted(ChannelId.CONTROL, MessageType.CHANNEL_OPEN_RESPONSE, response)
+                mux.sendEncryptedControl(channelId, MessageType.CHANNEL_OPEN_RESPONSE, response)
                 Timber.i("CTRL: Sent ChannelOpenResponse OK for channel=$channelId")
 
                 onChannelOpened(channelId)
@@ -78,14 +80,13 @@ class ControlChannelHandler(
                     Timber.i("CTRL: AudioFocusRequest: requestType=$requestType fields=${fields.map { "f${it.fieldNumber}=${it.varintValue}" }}")
                 } catch (_: Exception) {}
 
-                // Respond with AudioFocusNotification matching the request
-                // If AA requests focus (1=GAIN), respond with GAIN
-                // If AA notifies loss (4=LOSS_TRANSIENT_CAN_DUCK), acknowledge with same
-                val out = java.io.ByteArrayOutputStream()
-                ProtoEncoder.writeVarintField(out, 1, requestType.toLong()) // mirror the focus state
-                ProtoEncoder.writeVarintField(out, 2, 0) // unsolicited = false
-                mux.sendEncrypted(ChannelId.CONTROL, MessageType.AUDIO_FOCUS_RESPONSE, out.toByteArray())
-                Timber.i("CTRL: Sent AudioFocusResponse (state=$requestType)")
+                // Map request enum to response enum (different enum spaces):
+                // AUDIO_FOCUS_RELEASE (4) -> AUDIO_FOCUS_STATE_LOSS_TRANSIENT_CAN_DUCK (4)
+                // Everything else -> AUDIO_FOCUS_STATE_GAIN (1)
+                val focusState = if (requestType == 4) 4 else 1
+                val response = ServiceDiscovery.buildAudioFocusResponse(focusState)
+                mux.sendEncrypted(ChannelId.CONTROL, MessageType.AUDIO_FOCUS_RESPONSE, response)
+                Timber.i("CTRL: Sent AudioFocusResponse (state=$focusState for request=$requestType)")
             }
 
             MessageType.NAVIGATION_FOCUS_REQUEST -> {
