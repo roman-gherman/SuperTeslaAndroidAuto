@@ -1,0 +1,92 @@
+package org.bouncycastle.asn1.nsri;
+
+import androidx.room.RoomMasterTable;
+import w3.C0896n;
+
+/* JADX INFO: loaded from: classes2.dex */
+public interface NSRIObjectIdentifiers {
+    public static final C0896n id_algorithm;
+    public static final C0896n id_aria128_cbc;
+    public static final C0896n id_aria128_ccm;
+    public static final C0896n id_aria128_cfb;
+    public static final C0896n id_aria128_cmac;
+    public static final C0896n id_aria128_ctr;
+    public static final C0896n id_aria128_ecb;
+    public static final C0896n id_aria128_gcm;
+    public static final C0896n id_aria128_kw;
+    public static final C0896n id_aria128_kwp;
+    public static final C0896n id_aria128_ocb2;
+    public static final C0896n id_aria128_ofb;
+    public static final C0896n id_aria192_cbc;
+    public static final C0896n id_aria192_ccm;
+    public static final C0896n id_aria192_cfb;
+    public static final C0896n id_aria192_cmac;
+    public static final C0896n id_aria192_ctr;
+    public static final C0896n id_aria192_ecb;
+    public static final C0896n id_aria192_gcm;
+    public static final C0896n id_aria192_kw;
+    public static final C0896n id_aria192_kwp;
+    public static final C0896n id_aria192_ocb2;
+    public static final C0896n id_aria192_ofb;
+    public static final C0896n id_aria256_cbc;
+    public static final C0896n id_aria256_ccm;
+    public static final C0896n id_aria256_cfb;
+    public static final C0896n id_aria256_cmac;
+    public static final C0896n id_aria256_ctr;
+    public static final C0896n id_aria256_ecb;
+    public static final C0896n id_aria256_gcm;
+    public static final C0896n id_aria256_kw;
+    public static final C0896n id_aria256_kwp;
+    public static final C0896n id_aria256_ocb2;
+    public static final C0896n id_aria256_ofb;
+    public static final C0896n id_pad;
+    public static final C0896n id_pad_1;
+    public static final C0896n id_pad_null;
+    public static final C0896n id_sea;
+    public static final C0896n nsri;
+
+    static {
+        C0896n c0896n = new C0896n("1.2.410.200046");
+        nsri = c0896n;
+        C0896n c0896nJ = c0896n.j("1");
+        id_algorithm = c0896nJ;
+        C0896n c0896nJ2 = c0896nJ.j("1");
+        id_sea = c0896nJ2;
+        id_pad = c0896nJ.j("2");
+        id_pad_null = c0896nJ.j("0");
+        id_pad_1 = c0896nJ.j("1");
+        id_aria128_ecb = c0896nJ2.j("1");
+        id_aria128_cbc = c0896nJ2.j("2");
+        id_aria128_cfb = c0896nJ2.j("3");
+        id_aria128_ofb = c0896nJ2.j("4");
+        id_aria128_ctr = c0896nJ2.j("5");
+        id_aria192_ecb = c0896nJ2.j("6");
+        id_aria192_cbc = c0896nJ2.j("7");
+        id_aria192_cfb = c0896nJ2.j("8");
+        id_aria192_ofb = c0896nJ2.j("9");
+        id_aria192_ctr = c0896nJ2.j("10");
+        id_aria256_ecb = c0896nJ2.j("11");
+        id_aria256_cbc = c0896nJ2.j("12");
+        id_aria256_cfb = c0896nJ2.j("13");
+        id_aria256_ofb = c0896nJ2.j("14");
+        id_aria256_ctr = c0896nJ2.j("15");
+        id_aria128_cmac = c0896nJ2.j("21");
+        id_aria192_cmac = c0896nJ2.j("22");
+        id_aria256_cmac = c0896nJ2.j("23");
+        id_aria128_ocb2 = c0896nJ2.j("31");
+        id_aria192_ocb2 = c0896nJ2.j("32");
+        id_aria256_ocb2 = c0896nJ2.j("33");
+        id_aria128_gcm = c0896nJ2.j("34");
+        id_aria192_gcm = c0896nJ2.j("35");
+        id_aria256_gcm = c0896nJ2.j("36");
+        id_aria128_ccm = c0896nJ2.j("37");
+        id_aria192_ccm = c0896nJ2.j("38");
+        id_aria256_ccm = c0896nJ2.j("39");
+        id_aria128_kw = c0896nJ2.j("40");
+        id_aria192_kw = c0896nJ2.j("41");
+        id_aria256_kw = c0896nJ2.j(RoomMasterTable.DEFAULT_ID);
+        id_aria128_kwp = c0896nJ2.j("43");
+        id_aria192_kwp = c0896nJ2.j("44");
+        id_aria256_kwp = c0896nJ2.j("45");
+    }
+}

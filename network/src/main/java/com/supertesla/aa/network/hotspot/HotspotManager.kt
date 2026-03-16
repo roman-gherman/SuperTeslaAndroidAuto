@@ -46,7 +46,13 @@ class HotspotManager(private val context: Context) {
             return HotspotState.Disabled
         }
 
-        val clients = readArpTable()
+        // Try reading ARP table for client detection (may fail on Android 14+)
+        val clients = try {
+            readArpTable()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
         return if (clients.isNotEmpty()) {
             HotspotState.ClientConnected(clients)
         } else {

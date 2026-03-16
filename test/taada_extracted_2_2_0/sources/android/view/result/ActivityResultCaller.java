@@ -1,0 +1,10 @@
+package android.view.result;
+
+import android.view.result.contract.ActivityResultContract;
+
+/* JADX INFO: loaded from: classes.dex */
+public interface ActivityResultCaller {
+    <I, O> ActivityResultLauncher<I> registerForActivityResult(ActivityResultContract<I, O> activityResultContract, ActivityResultCallback<O> activityResultCallback);
+
+    <I, O> ActivityResultLauncher<I> registerForActivityResult(ActivityResultContract<I, O> activityResultContract, ActivityResultRegistry activityResultRegistry, ActivityResultCallback<O> activityResultCallback);
+}

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="language_entries">
+        <item>@string/language_auto</item>
+        <item>@string/language_english</item>
+        <item>@string/language_french</item>
+        <item>@string/language_german</item>
+        <item>@string/language_italian</item>
+        <item>@string/language_spanish</item>
+        <item>@string/language_dutch</item>
+        <item>@string/language_danish</item>
+        <item>@string/language_swedish</item>
+        <item>@string/language_norwegian</item>
+        <item>@string/language_finnish</item>
+        <item>@string/language_czech</item>
+        <item>@string/language_greek</item>
+        <item>@string/language_irish</item>
+        <item>@string/language_romansh</item>
+        <item>@string/language_arabic</item>
+    </array>
+    <array name="language_values">
+        <item>auto</item>
+        <item>en</item>
+        <item>fr</item>
+        <item>de</item>
+        <item>it</item>
+        <item>es</item>
+        <item>nl</item>
+        <item>da</item>
+        <item>sv</item>
+        <item>no</item>
+        <item>fi</item>
+        <item>cs</item>
+        <item>el</item>
+        <item>ga</item>
+        <item>rm</item>
+        <item>ar</item>
+    </array>
+    <array name="pref_resolution_entries">
+        <item>Auto (anbefalt)</item>
+        <item>1080p</item>
+        <item>720p</item>
+        <item>480p</item>
+    </array>
+    <array name="pref_resolution_values">
+        <item>auto</item>
+        <item>1080</item>
+        <item>720</item>
+        <item>480</item>
+    </array>
+    <array name="resArray">
+        <item>720p</item>
+        <item>1080p</item>
+        <item>1440p</item>
+        <item>480p</item>
+    </array>
+    <array name="resValues">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+    </array>
+    <array name="resolution_entries">
+        <item>720×480 (480p)</item>
+        <item>1280×720 (720p)</item>
+        <item>1920×1080 (1080p)</item>
+    </array>
+    <array name="resolution_values">
+        <item>720x480</item>
+        <item>1280x720</item>
+        <item>1920x1080</item>
+    </array>
+</resources>

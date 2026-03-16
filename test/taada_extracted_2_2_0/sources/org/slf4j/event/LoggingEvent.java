@@ -1,0 +1,23 @@
+package org.slf4j.event;
+
+import B5.b;
+import org.slf4j.Marker;
+
+/* JADX INFO: loaded from: classes.dex */
+public interface LoggingEvent {
+    Object[] getArgumentArray();
+
+    b getLevel();
+
+    String getLoggerName();
+
+    Marker getMarker();
+
+    String getMessage();
+
+    String getThreadName();
+
+    Throwable getThrowable();
+
+    long getTimeStamp();
+}

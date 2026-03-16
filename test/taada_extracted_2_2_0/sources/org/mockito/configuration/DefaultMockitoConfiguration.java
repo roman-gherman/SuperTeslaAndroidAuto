@@ -1,0 +1,22 @@
+package org.mockito.configuration;
+
+import org.mockito.internal.stubbing.defaultanswers.ReturnsEmptyValues;
+import org.mockito.stubbing.Answer;
+
+/* JADX INFO: loaded from: classes.dex */
+public class DefaultMockitoConfiguration implements IMockitoConfiguration {
+    @Override // org.mockito.configuration.IMockitoConfiguration
+    public boolean cleansStackTrace() {
+        return true;
+    }
+
+    @Override // org.mockito.configuration.IMockitoConfiguration
+    public boolean enableClassCache() {
+        return true;
+    }
+
+    @Override // org.mockito.configuration.IMockitoConfiguration
+    public Answer<Object> getDefaultAnswer() {
+        return new ReturnsEmptyValues();
+    }
+}

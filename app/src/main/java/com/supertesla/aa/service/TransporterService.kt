@@ -59,6 +59,10 @@ class TransporterService : Service() {
         val isVideoActiveFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
         val statusText = kotlinx.coroutines.flow.MutableStateFlow("Idle")
 
+        val hotspotStateFlow = kotlinx.coroutines.flow.MutableStateFlow<com.supertesla.aa.core.model.HotspotState>(
+            com.supertesla.aa.core.model.HotspotState.Unknown
+        )
+
         var isActive: Boolean
             get() = isActiveFlow.value
             set(v) { isActiveFlow.value = v }
@@ -157,8 +161,26 @@ class TransporterService : Service() {
                 acquireLocks()
                 updateNotification("Acquiring locks...")
 
-                // 2. Skip VPN for now — dummy TUN blocks all traffic
-                Timber.i("PIPELINE: Step 2 — VPN skipped (testing)")
+                // 2. Force-kill any lingering AA car process from previous session
+                Timber.i("PIPELINE: Step 2 — Cleaning up old AA sessions")
+                try {
+                    Runtime.getRuntime().exec(arrayOf("am", "force-stop", "com.google.android.projection.gearhead"))
+                    kotlinx.coroutines.delay(500)
+                } catch (_: Exception) {}
+
+                // 2b. Start hotspot monitoring
+                try {
+                    val hm = HotspotManager(this@TransporterService)
+                    hotspotManager = hm
+                    launch {
+                        hm.observeHotspotState().collect { state ->
+                            hotspotStateFlow.value = state
+                            Timber.d("Hotspot: $state")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "Hotspot monitoring failed")
+                }
 
                 // 3. Start 3 WebSocket servers
                 wsBasePort = (8090 + (Math.random() * 1908).toInt())
@@ -441,39 +463,46 @@ class TransporterService : Service() {
         isActive = false
         isConnected = false
         isVideoActive = false
+        statusText.value = "Stopping..."
+
+        // Cancel coroutines first to stop all background work
+        pipelineJob?.cancel()
+        pipelineJob = null
 
         // Stop heartbeat
-        stopHeartbeat()
+        try { stopHeartbeat() } catch (_: Exception) {}
 
         // Disconnect AA emulator
-        emulator?.disconnect()
+        try {
+            emulator?.disconnect()
+        } catch (_: Exception) {}
         emulator = null
 
         // Reset NAL manager
-        nalStreamManager?.reset()
+        try { nalStreamManager?.reset() } catch (_: Exception) {}
         nalStreamManager = null
 
-        // Stop web server (catch Netty shutdown race condition)
-        try { webServer?.stop() } catch (_: Exception) {}
+        // Stop web server in background to avoid Netty crash
+        val ws = webServer
         webServer = null
+        if (ws != null) {
+            Thread {
+                try { ws.stop() } catch (_: Exception) {}
+            }.start()
+        }
 
         // Stop WebSocket servers
-        stopWebSocketServers()
-
-        // Stop VPN
-        stopService(Intent(this, VpnTunnelService::class.java))
+        try { stopWebSocketServers() } catch (_: Exception) {}
 
         // Release locks
-        releaseLocks()
+        try { releaseLocks() } catch (_: Exception) {}
 
-        // Cancel coroutines
-        pipelineJob?.cancel()
-        pipelineJob = null
+        statusText.value = "Idle"
     }
 
     override fun onDestroy() {
-        stopPipeline()
-        serviceScope.cancel()
+        try { stopPipeline() } catch (_: Exception) {}
+        try { serviceScope.cancel() } catch (_: Exception) {}
         super.onDestroy()
     }
 

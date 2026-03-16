@@ -1,0 +1,92 @@
+package org.bouncycastle.asn1.cmc;
+
+import w3.C0896n;
+
+/* JADX INFO: loaded from: classes2.dex */
+public interface CMCObjectIdentifiers {
+    public static final C0896n id_cct;
+    public static final C0896n id_cct_PKIData;
+    public static final C0896n id_cct_PKIResponse;
+    public static final C0896n id_cmc;
+    public static final C0896n id_cmc_addExtensions;
+    public static final C0896n id_cmc_authData;
+    public static final C0896n id_cmc_batchRequests;
+    public static final C0896n id_cmc_batchResponses;
+    public static final C0896n id_cmc_confirmCertAcceptance;
+    public static final C0896n id_cmc_controlProcessed;
+    public static final C0896n id_cmc_dataReturn;
+    public static final C0896n id_cmc_decryptedPOP;
+    public static final C0896n id_cmc_encryptedPOP;
+    public static final C0896n id_cmc_getCRL;
+    public static final C0896n id_cmc_getCert;
+    public static final C0896n id_cmc_identification;
+    public static final C0896n id_cmc_identityProof;
+    public static final C0896n id_cmc_identityProofV2;
+    public static final C0896n id_cmc_lraPOPWitness;
+    public static final C0896n id_cmc_modCertTemplate;
+    public static final C0896n id_cmc_popLinkRandom;
+    public static final C0896n id_cmc_popLinkWitness;
+    public static final C0896n id_cmc_popLinkWitnessV2;
+    public static final C0896n id_cmc_publishCert;
+    public static final C0896n id_cmc_queryPending;
+    public static final C0896n id_cmc_recipientNonce;
+    public static final C0896n id_cmc_regInfo;
+    public static final C0896n id_cmc_responseInfo;
+    public static final C0896n id_cmc_revokeRequest;
+    public static final C0896n id_cmc_senderNonce;
+    public static final C0896n id_cmc_statusInfo;
+    public static final C0896n id_cmc_statusInfoV2;
+    public static final C0896n id_cmc_transactionId;
+    public static final C0896n id_cmc_trustedAnchors;
+    public static final C0896n id_kp;
+    public static final C0896n id_kp_cmKGA;
+    public static final C0896n id_kp_cmcCA;
+    public static final C0896n id_kp_cmcRA;
+    public static final C0896n id_pkix;
+
+    static {
+        C0896n c0896n = new C0896n("1.3.6.1.5.5.7");
+        id_pkix = c0896n;
+        C0896n c0896nJ = c0896n.j("7");
+        id_cmc = c0896nJ;
+        C0896n c0896nJ2 = c0896n.j("12");
+        id_cct = c0896nJ2;
+        C0896n c0896nJ3 = c0896n.j("3");
+        id_kp = c0896nJ3;
+        id_cmc_identityProof = c0896nJ.j("3");
+        id_cmc_dataReturn = c0896nJ.j("4");
+        id_cmc_regInfo = c0896nJ.j("18");
+        id_cmc_responseInfo = c0896nJ.j("19");
+        id_cmc_queryPending = c0896nJ.j("21");
+        id_cmc_popLinkRandom = c0896nJ.j("22");
+        id_cmc_popLinkWitness = c0896nJ.j("23");
+        id_cmc_identification = c0896nJ.j("2");
+        id_cmc_transactionId = c0896nJ.j("5");
+        id_cmc_senderNonce = c0896nJ.j("6");
+        id_cmc_recipientNonce = c0896nJ.j("7");
+        id_cct_PKIData = c0896nJ2.j("2");
+        id_cct_PKIResponse = c0896nJ2.j("3");
+        id_cmc_statusInfo = c0896nJ.j("1");
+        id_cmc_addExtensions = c0896nJ.j("8");
+        id_cmc_encryptedPOP = c0896nJ.j("9");
+        id_cmc_decryptedPOP = c0896nJ.j("10");
+        id_cmc_lraPOPWitness = c0896nJ.j("11");
+        id_cmc_getCert = c0896nJ.j("15");
+        id_cmc_getCRL = c0896nJ.j("16");
+        id_cmc_revokeRequest = c0896nJ.j("17");
+        id_cmc_confirmCertAcceptance = c0896nJ.j("24");
+        id_cmc_statusInfoV2 = c0896nJ.j("25");
+        id_cmc_trustedAnchors = c0896nJ.j("26");
+        id_cmc_authData = c0896nJ.j("27");
+        id_cmc_batchRequests = c0896nJ.j("28");
+        id_cmc_batchResponses = c0896nJ.j("29");
+        id_cmc_publishCert = c0896nJ.j("30");
+        id_cmc_modCertTemplate = c0896nJ.j("31");
+        id_cmc_controlProcessed = c0896nJ.j("32");
+        id_cmc_identityProofV2 = c0896nJ.j("34");
+        id_cmc_popLinkWitnessV2 = c0896nJ.j("33");
+        id_kp_cmcCA = c0896nJ3.j("27");
+        id_kp_cmcRA = c0896nJ3.j("28");
+        id_kp_cmKGA = c0896nJ3.j("32");
+    }
+}

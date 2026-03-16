@@ -37,7 +37,6 @@ import com.supertesla.aa.ui.theme.*
 @Composable
 fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissions: () -> Unit = {}) {
     val appState by viewModel.appState.collectAsStateWithLifecycle()
-    val hotspotState by viewModel.hotspotState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Observe TransporterService state
@@ -45,6 +44,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
     val serviceConnected by TransporterService.isConnectedFlow.collectAsStateWithLifecycle()
     val serviceVideoActive by TransporterService.isVideoActiveFlow.collectAsStateWithLifecycle()
     val serviceStatus by TransporterService.statusText.collectAsStateWithLifecycle()
+    val hotspotState by TransporterService.hotspotStateFlow.collectAsStateWithLifecycle()
 
     val isRunning = serviceActive || appState.isRunning
 

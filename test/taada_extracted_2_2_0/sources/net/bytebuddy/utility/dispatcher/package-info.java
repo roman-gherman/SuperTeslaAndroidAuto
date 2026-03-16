@@ -1,0 +1,5 @@
+@NeverNull.ByDefault
+package net.bytebuddy.utility.dispatcher;
+
+import net.bytebuddy.utility.nullability.NeverNull;
+

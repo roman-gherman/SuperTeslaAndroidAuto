@@ -1,0 +1,95 @@
+package org.bouncycastle.asn1.cmp;
+
+import org.bouncycastle.asn1.crmf.CRMFObjectIdentifiers;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
+import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
+import w3.C0896n;
+
+/* JADX INFO: loaded from: classes2.dex */
+public interface CMPObjectIdentifiers {
+    public static final C0896n ct_encKeyWithID;
+    public static final C0896n dhBasedMac;
+    public static final C0896n id_it;
+    public static final C0896n id_it_caCerts;
+    public static final C0896n id_it_certProfile;
+    public static final C0896n id_it_certReqTemplate;
+    public static final C0896n id_it_crlStatusList;
+    public static final C0896n id_it_crls;
+    public static final C0896n id_it_rootCaCert;
+    public static final C0896n id_it_rootCaKeyUpdate;
+    public static final C0896n id_pkip;
+    public static final C0896n id_regCtrl;
+    public static final C0896n id_regCtrl_algId;
+    public static final C0896n id_regCtrl_rsaKeyLen;
+    public static final C0896n id_regInfo;
+    public static final C0896n it_caKeyUpdateInfo;
+    public static final C0896n it_caProtEncCert;
+    public static final C0896n it_confirmWaitTime;
+    public static final C0896n it_currentCRL;
+    public static final C0896n it_encKeyPairTypes;
+    public static final C0896n it_implicitConfirm;
+    public static final C0896n it_keyPairParamRep;
+    public static final C0896n it_keyPairParamReq;
+    public static final C0896n it_origPKIMessage;
+    public static final C0896n it_preferredSymAlg;
+    public static final C0896n it_revPassphrase;
+    public static final C0896n it_signKeyPairTypes;
+    public static final C0896n it_suppLangTags;
+    public static final C0896n it_unsupportedOIDs;
+    public static final C0896n kemBasedMac;
+    public static final C0896n passwordBasedMac = CRMFObjectIdentifiers.passwordBasedMac;
+    public static final C0896n regCtrl_altCertTemplate;
+    public static final C0896n regCtrl_authenticator;
+    public static final C0896n regCtrl_oldCertID;
+    public static final C0896n regCtrl_pkiArchiveOptions;
+    public static final C0896n regCtrl_pkiPublicationInfo;
+    public static final C0896n regCtrl_protocolEncrKey;
+    public static final C0896n regCtrl_regToken;
+    public static final C0896n regInfo_certReq;
+    public static final C0896n regInfo_utf8Pairs;
+
+    static {
+        C0896n c0896n = MiscObjectIdentifiers.entrust;
+        kemBasedMac = c0896n.j("66.16");
+        dhBasedMac = c0896n.j("66.30");
+        C0896n c0896nJ = X509ObjectIdentifiers.id_pkix.j("4");
+        id_it = c0896nJ;
+        it_caProtEncCert = c0896nJ.j("1");
+        it_signKeyPairTypes = c0896nJ.j("2");
+        it_encKeyPairTypes = c0896nJ.j("3");
+        it_preferredSymAlg = c0896nJ.j("4");
+        it_caKeyUpdateInfo = c0896nJ.j("5");
+        it_currentCRL = c0896nJ.j("6");
+        it_unsupportedOIDs = c0896nJ.j("7");
+        it_keyPairParamReq = c0896nJ.j("10");
+        it_keyPairParamRep = c0896nJ.j("11");
+        it_revPassphrase = c0896nJ.j("12");
+        it_implicitConfirm = c0896nJ.j("13");
+        it_confirmWaitTime = c0896nJ.j("14");
+        it_origPKIMessage = c0896nJ.j("15");
+        it_suppLangTags = c0896nJ.j("16");
+        id_it_caCerts = c0896nJ.j("17");
+        id_it_rootCaKeyUpdate = c0896nJ.j("18");
+        id_it_certReqTemplate = c0896nJ.j("19");
+        id_it_rootCaCert = c0896nJ.j("20");
+        id_it_certProfile = c0896nJ.j("21");
+        id_it_crlStatusList = c0896nJ.j("22");
+        id_it_crls = c0896nJ.j("23");
+        id_pkip = CRMFObjectIdentifiers.id_pkip;
+        C0896n c0896n2 = CRMFObjectIdentifiers.id_regCtrl;
+        id_regCtrl = c0896n2;
+        id_regInfo = CRMFObjectIdentifiers.id_regInfo;
+        regCtrl_regToken = CRMFObjectIdentifiers.id_regCtrl_regToken;
+        regCtrl_authenticator = CRMFObjectIdentifiers.id_regCtrl_authenticator;
+        regCtrl_pkiPublicationInfo = CRMFObjectIdentifiers.id_regCtrl_pkiPublicationInfo;
+        regCtrl_pkiArchiveOptions = CRMFObjectIdentifiers.id_regCtrl_pkiArchiveOptions;
+        regCtrl_oldCertID = CRMFObjectIdentifiers.id_regCtrl_oldCertID;
+        regCtrl_protocolEncrKey = CRMFObjectIdentifiers.id_regCtrl_protocolEncrKey;
+        regCtrl_altCertTemplate = c0896n2.j("7");
+        id_regCtrl_algId = c0896n2.j("11");
+        id_regCtrl_rsaKeyLen = c0896n2.j("12");
+        regInfo_utf8Pairs = CRMFObjectIdentifiers.id_regInfo_utf8Pairs;
+        regInfo_certReq = CRMFObjectIdentifiers.id_regInfo_certReq;
+        ct_encKeyWithID = CRMFObjectIdentifiers.id_ct_encKeyWithID;
+    }
+}
