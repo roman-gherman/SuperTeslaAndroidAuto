@@ -40,6 +40,14 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
     val hotspotState by viewModel.hotspotState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // Observe TransporterService state
+    val serviceActive by TransporterService.isActiveFlow.collectAsStateWithLifecycle()
+    val serviceConnected by TransporterService.isConnectedFlow.collectAsStateWithLifecycle()
+    val serviceVideoActive by TransporterService.isVideoActiveFlow.collectAsStateWithLifecycle()
+    val serviceStatus by TransporterService.statusText.collectAsStateWithLifecycle()
+
+    val isRunning = serviceActive || appState.isRunning
+
     var vpnPermissionGranted by remember { mutableStateOf(false) }
 
     val vpnLauncher = rememberLauncherForActivityResult(
@@ -105,13 +113,27 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
             Spacer(Modifier.height(36.dp))
 
             // URL card (prominent when running)
-            if (appState is AppState.ServerRunning || appState is AppState.Streaming) {
-                UrlCard(url = AppConfig.getServerUrl())
-                Spacer(Modifier.height(28.dp))
+            if (isRunning) {
+                UrlCard(url = AppConfig.getServerUrlFallback())
+                Spacer(Modifier.height(12.dp))
+                // Status text from service
+                if (serviceActive) {
+                    Text(
+                        text = serviceStatus,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TeslaGray
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
             }
 
             // Status indicators
-            StatusCard(appState = appState, hotspotState = hotspotState)
+            StatusCard(
+                serviceActive = serviceActive,
+                serviceConnected = serviceConnected,
+                serviceVideoActive = serviceVideoActive,
+                hotspotState = hotspotState
+            )
 
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
@@ -131,11 +153,8 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
 
             Spacer(Modifier.weight(1f))
 
-            // Loading state: show when transitioning (not Idle and not fully running/error)
-            val isLoading = appState is AppState.StartingHotspot ||
-                    appState is AppState.StartingVpn ||
-                    appState is AppState.StartingServer ||
-                    appState is AppState.ConnectingAA
+            // Loading state
+            val isLoading = serviceActive && !serviceConnected
 
             if (isLoading) {
                 val infiniteTransition = rememberInfiniteTransition(label = "loading")
@@ -155,13 +174,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = when (appState) {
-                        is AppState.StartingHotspot -> "Waiting for hotspot..."
-                        is AppState.StartingVpn -> "Setting up network..."
-                        is AppState.StartingServer -> "Starting server..."
-                        is AppState.ConnectingAA -> "Looking for Android Auto..."
-                        else -> "Loading..."
-                    },
+                    text = serviceStatus,
                     style = MaterialTheme.typography.bodyLarge,
                     color = TeslaGray
                 )
@@ -171,7 +184,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
             // Big START / STOP button
             Button(
                 onClick = {
-                    if (appState.isRunning || TransporterService.isActive) {
+                    if (isRunning) {
                         TransporterService.stop(context)
                     } else {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -190,7 +203,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
                     .height(72.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (appState.isRunning || TransporterService.isActive) TeslaRed else TeslaBlue,
+                    containerColor = if (isRunning) TeslaRed else TeslaBlue,
                     disabledContainerColor = TeslaSurfaceVariant
                 )
             ) {
@@ -202,9 +215,9 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
                     )
                 } else {
                     Text(
-                        text = if (appState.isRunning || TransporterService.isActive) "STOP" else "START",
+                        text = if (isRunning) "STOP" else "START",
                         style = MaterialTheme.typography.headlineMedium,
-                        color = if (appState.isRunning || TransporterService.isActive) TeslaWhite else TeslaDark
+                        color = if (isRunning) TeslaWhite else TeslaDark
                     )
                 }
             }
@@ -216,30 +229,23 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
 }
 
 @Composable
-private fun StatusCard(appState: AppState, hotspotState: HotspotState) {
+private fun StatusCard(
+    serviceActive: Boolean,
+    serviceConnected: Boolean,
+    serviceVideoActive: Boolean,
+    hotspotState: HotspotState
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = TeslaSurface),
         shape = MaterialTheme.shapes.large
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
-            StatusRow(
-                label = "Service",
-                isActive = TransporterService.isActive,
-                detail = if (TransporterService.isActive) "Running" else "Stopped"
-            )
+            StatusRow("Service", serviceActive, if (serviceActive) "Running" else "Stopped")
             Spacer(Modifier.height(16.dp))
-            StatusRow(
-                label = "Android Auto",
-                isActive = TransporterService.isConnected,
-                detail = if (TransporterService.isConnected) "Connected" else "Waiting..."
-            )
+            StatusRow("Android Auto", serviceConnected, if (serviceConnected) "Connected" else "Waiting...")
             Spacer(Modifier.height(16.dp))
-            StatusRow(
-                label = "Video",
-                isActive = TransporterService.isVideoActive,
-                detail = if (TransporterService.isVideoActive) "Streaming" else "Off"
-            )
+            StatusRow("Video", serviceVideoActive, if (serviceVideoActive) "Streaming" else "Off")
             Spacer(Modifier.height(16.dp))
             StatusRow(
                 label = "Hotspot",

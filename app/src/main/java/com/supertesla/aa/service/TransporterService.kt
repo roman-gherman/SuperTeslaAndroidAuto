@@ -54,9 +54,20 @@ class TransporterService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "supertesla_transporter"
         private const val NOTIFICATION_ID = 1002
 
-        @Volatile var isActive = false
-        @Volatile var isConnected = false
-        @Volatile var isVideoActive = false
+        val isActiveFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val isConnectedFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val isVideoActiveFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val statusText = kotlinx.coroutines.flow.MutableStateFlow("Idle")
+
+        var isActive: Boolean
+            get() = isActiveFlow.value
+            set(v) { isActiveFlow.value = v }
+        var isConnected: Boolean
+            get() = isConnectedFlow.value
+            set(v) { isConnectedFlow.value = v }
+        var isVideoActive: Boolean
+            get() = isVideoActiveFlow.value
+            set(v) { isVideoActiveFlow.value = v }
 
         fun start(context: Context, triggerSource: String = "manual") {
             val intent = Intent(context, TransporterService::class.java).apply {
@@ -502,6 +513,7 @@ class TransporterService : Service() {
     }
 
     private fun updateNotification(text: String) {
+        statusText.value = text
         try {
             getSystemService(NotificationManager::class.java)
                 .notify(NOTIFICATION_ID, createNotification(text))

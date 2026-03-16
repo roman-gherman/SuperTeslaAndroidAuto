@@ -3,18 +3,32 @@ package com.supertesla.aa.androidauto.proto
 import java.io.ByteArrayOutputStream
 
 /**
- * Builds the Service Discovery Response protobuf that describes
- * this head unit's capabilities to the Android Auto phone app.
+ * Builds the Service Discovery Response protobuf.
  *
- * Service IDs must match TaaDa's exactly:
- *   1 = InputSourceService (touchscreen)
- *   2 = SensorSourceService
- *   3 = MediaSinkService (video H.264)
- *   4 = MediaSourceService (microphone)
- *   5 = MediaSinkService (media audio) — optional
- *   6 = MediaSinkService (system audio) — optional
- *   7 = MediaSinkService (guidance audio) — optional
- *   9 = MediaPlaybackStatusService
+ * Proto field numbers verified from TaaDa's decompiled proto classes:
+ *
+ * ServiceDiscoveryResponse:
+ *   1=services, 2=make, 3=model, 4=year, 5=vehicle_id, 6=driver_position,
+ *   7=hu_make, 8=hu_model, 9=sw_build, 10=sw_version, 11=native_media,
+ *   13=session_config, 14=display_name, 15=probe, 16=conn_config, 17=hu_info
+ *
+ * Service:
+ *   1=id, 2=sensor_source, 3=media_sink, 4=input_source, 5=media_source,
+ *   6=bluetooth, 7=radio, 8=nav_status, 9=media_playback, 10=phone_status
+ *
+ * MediaSinkService:
+ *   1=available_type, 2=audio_type, 3=audio_configs, 4=video_configs, 7=display_type
+ *
+ * InputSourceService:
+ *   1=keycodes(repeated), 2=touchscreen
+ *   Touchscreen: 1=width, 2=height, 3=type
+ *
+ * SensorSourceService:
+ *   1=sensors(repeated)
+ *   Sensor: 1=sensor_type
+ *
+ * MediaSourceService:
+ *   1=available_type, 2=audio_config
  */
 object ServiceDiscovery {
 
@@ -42,9 +56,6 @@ object ServiceDiscovery {
         val channelCount: Int = 2
     )
 
-    /**
-     * Build the full Service Discovery Response payload matching TaaDa's format.
-     */
     fun buildResponse(
         huInfo: HeadUnitInfo = HeadUnitInfo(),
         videoConfig: VideoConfig = VideoConfig(),
@@ -55,74 +66,60 @@ object ServiceDiscovery {
     ): ByteArray {
         val out = ByteArrayOutputStream()
 
-        // Top-level fields matching ServiceDiscoveryResponse proto:
-        // field 2: make (string)
-        ProtoEncoder.writeStringField(out, 2, huInfo.make)
-        // field 3: model (string)
-        ProtoEncoder.writeStringField(out, 3, huInfo.model)
-        // field 4: year (string)
-        ProtoEncoder.writeStringField(out, 4, "2024")
-        // field 5: vehicle_id (string)
-        ProtoEncoder.writeStringField(out, 5, "SUPERTESLA001")
-        // field 6: driver_position (enum, LEFT=1)
-        ProtoEncoder.writeVarintField(out, 6, 1)
-        // field 7: head_unit_make (string)
-        ProtoEncoder.writeStringField(out, 7, huInfo.huMake)
-        // field 8: head_unit_model (string)
-        ProtoEncoder.writeStringField(out, 8, huInfo.huModel)
-        // field 9: head_unit_software_build (string)
-        ProtoEncoder.writeStringField(out, 9, huInfo.swBuild)
-        // field 10: head_unit_software_version (string)
-        ProtoEncoder.writeStringField(out, 10, huInfo.swVersion)
-        // field 11: can_play_native_media_during_vr (bool)
-        ProtoEncoder.writeVarintField(out, 11, 0)
+        // Top-level fields
+        ProtoEncoder.writeStringField(out, 2, huInfo.make)         // make
+        ProtoEncoder.writeStringField(out, 3, huInfo.model)        // model
+        ProtoEncoder.writeStringField(out, 4, "2024")              // year
+        ProtoEncoder.writeStringField(out, 5, "SUPERTESLA001")     // vehicle_id
+        ProtoEncoder.writeVarintField(out, 6, 1)                   // driver_position=LEFT
+        ProtoEncoder.writeStringField(out, 7, huInfo.huMake)       // hu_make
+        ProtoEncoder.writeStringField(out, 8, huInfo.huModel)      // hu_model
+        ProtoEncoder.writeStringField(out, 9, huInfo.swBuild)      // sw_build
+        ProtoEncoder.writeStringField(out, 10, huInfo.swVersion)   // sw_version
+        ProtoEncoder.writeVarintField(out, 11, 0)                  // native_media=false
 
-        // === Service 1: InputSourceService (touchscreen + keycodes) ===
+        // === Service 1: InputSourceService (field 4 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-            ProtoEncoder.writeVarintField(svc, 1, 1) // service_id = 1
-            ProtoEncoder.writeEmbeddedMessage(svc, 3) { input ->
-                // Touchscreen config (field 1)
-                ProtoEncoder.writeEmbeddedMessage(input, 1) { ts ->
-                    ProtoEncoder.writeVarintField(ts, 1, videoConfig.width.toLong())
-                    ProtoEncoder.writeVarintField(ts, 2, videoConfig.height.toLong())
-                    ProtoEncoder.writeVarintField(ts, 3, 1) // type = CAPACITIVE
-                }
-                // Keycodes (field 2, repeated varint)
+            ProtoEncoder.writeVarintField(svc, 1, 1) // service id = 1
+            // InputSourceService = Service field 4
+            ProtoEncoder.writeEmbeddedMessage(svc, 4) { input ->
+                // keycodes_supported = field 1 (repeated varint)
                 val keycodes = intArrayOf(1, 2, 3, 4, 5, 6, 19, 20, 21, 22, 23, 84, 85, 87, 88)
                 for (kc in keycodes) {
-                    ProtoEncoder.writeVarintField(input, 2, kc.toLong())
+                    ProtoEncoder.writeVarintField(input, 1, kc.toLong())
+                }
+                // touchscreen = field 2
+                ProtoEncoder.writeEmbeddedMessage(input, 2) { ts ->
+                    ProtoEncoder.writeVarintField(ts, 1, videoConfig.width.toLong())  // width
+                    ProtoEncoder.writeVarintField(ts, 2, videoConfig.height.toLong()) // height
+                    ProtoEncoder.writeVarintField(ts, 3, 1)                           // type=CAPACITIVE
                 }
             }
         }
 
-        // === Service 2: SensorSourceService ===
+        // === Service 2: SensorSourceService (field 2 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-            ProtoEncoder.writeVarintField(svc, 1, 2) // service_id = 2
+            ProtoEncoder.writeVarintField(svc, 1, 2) // service id = 2
+            // SensorSourceService = Service field 2
             ProtoEncoder.writeEmbeddedMessage(svc, 2) { sensor ->
-                // Supported sensors (field 1, repeated embedded)
-                ProtoEncoder.writeEmbeddedMessage(sensor, 1) { s ->
-                    ProtoEncoder.writeVarintField(s, 1, 11) // DRIVING_STATUS
-                }
-                ProtoEncoder.writeEmbeddedMessage(sensor, 1) { s ->
-                    ProtoEncoder.writeVarintField(s, 1, 10) // NIGHT_MODE
-                }
-                ProtoEncoder.writeEmbeddedMessage(sensor, 1) { s ->
-                    ProtoEncoder.writeVarintField(s, 1, 1)  // LOCATION
-                }
-                ProtoEncoder.writeEmbeddedMessage(sensor, 1) { s ->
-                    ProtoEncoder.writeVarintField(s, 1, 12) // PARKING_BRAKE
+                // sensors = field 1 (repeated embedded Sensor)
+                for (sensorType in intArrayOf(11, 10, 1, 12)) { // DRIVING_STATUS, NIGHT, LOCATION, PARKING_BRAKE
+                    ProtoEncoder.writeEmbeddedMessage(sensor, 1) { s ->
+                        ProtoEncoder.writeVarintField(s, 1, sensorType.toLong()) // sensor_type
+                    }
                 }
             }
         }
 
-        // === Service 3: MediaSinkService (VIDEO H.264) ===
+        // === Service 3: MediaSinkService for VIDEO (field 3 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-            ProtoEncoder.writeVarintField(svc, 1, 3) // service_id = 3
-            ProtoEncoder.writeEmbeddedMessage(svc, 4) { sink ->
-                ProtoEncoder.writeVarintField(sink, 1, 6) // available_type = VIDEO_H264_BP (6)
-                ProtoEncoder.writeVarintField(sink, 5, 1) // display_type = MAIN (1)
-                // Video config (field 2)
-                ProtoEncoder.writeEmbeddedMessage(sink, 2) { vc ->
+            ProtoEncoder.writeVarintField(svc, 1, 3) // service id = 3
+            // MediaSinkService = Service field 3
+            ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
+                ProtoEncoder.writeVarintField(sink, 1, 6)  // available_type = VIDEO_H264_BP (6)
+                ProtoEncoder.writeVarintField(sink, 7, 1)  // display_type = MAIN (1)
+                // video_configs = field 4
+                ProtoEncoder.writeEmbeddedMessage(sink, 4) { vc ->
                     ProtoEncoder.writeVarintField(vc, 1, 1) // codec_resolution
                     ProtoEncoder.writeVarintField(vc, 2, videoConfig.width.toLong())
                     ProtoEncoder.writeVarintField(vc, 3, videoConfig.height.toLong())
@@ -134,12 +131,14 @@ object ServiceDiscovery {
             }
         }
 
-        // === Service 4: MediaSourceService (MIC input) ===
+        // === Service 4: MediaSourceService for MIC (field 5 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-            ProtoEncoder.writeVarintField(svc, 1, 4) // service_id = 4
+            ProtoEncoder.writeVarintField(svc, 1, 4) // service id = 4
+            // MediaSourceService = Service field 5
             ProtoEncoder.writeEmbeddedMessage(svc, 5) { mic ->
-                ProtoEncoder.writeVarintField(mic, 2, 1) // available_type = AUDIO_PCM (1)
-                ProtoEncoder.writeEmbeddedMessage(mic, 1) { ac ->
+                ProtoEncoder.writeVarintField(mic, 1, 1) // available_type = AUDIO_PCM (1)
+                // audio_config = field 2
+                ProtoEncoder.writeEmbeddedMessage(mic, 2) { ac ->
                     ProtoEncoder.writeVarintField(ac, 1, 16000) // sample_rate
                     ProtoEncoder.writeVarintField(ac, 2, 16)    // bit_depth
                     ProtoEncoder.writeVarintField(ac, 3, 1)     // channels (mono)
@@ -148,13 +147,14 @@ object ServiceDiscovery {
         }
 
         if (includeAudioSinks) {
-            // === Service 5: MediaSinkService (MEDIA audio) ===
+            // === Service 5: MediaSinkService for MEDIA audio (field 3 in Service) ===
             ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-                ProtoEncoder.writeVarintField(svc, 1, 5) // service_id = 5
-                ProtoEncoder.writeEmbeddedMessage(svc, 4) { sink ->
-                    ProtoEncoder.writeVarintField(sink, 1, 1) // available_type = AUDIO_PCM (1)
-                    ProtoEncoder.writeVarintField(sink, 3, 3) // audio_type = MEDIA (3)
-                    ProtoEncoder.writeEmbeddedMessage(sink, 2) { ac ->
+                ProtoEncoder.writeVarintField(svc, 1, 5)
+                ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
+                    ProtoEncoder.writeVarintField(sink, 1, 1) // AUDIO_PCM
+                    ProtoEncoder.writeVarintField(sink, 2, 3) // audio_type = MEDIA
+                    // audio_configs = field 3
+                    ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
                         ProtoEncoder.writeVarintField(ac, 1, mediaAudio.sampleRate.toLong())
                         ProtoEncoder.writeVarintField(ac, 2, mediaAudio.bitDepth.toLong())
                         ProtoEncoder.writeVarintField(ac, 3, mediaAudio.channelCount.toLong())
@@ -162,13 +162,13 @@ object ServiceDiscovery {
                 }
             }
 
-            // === Service 6: MediaSinkService (SYSTEM audio) ===
+            // === Service 6: MediaSinkService for SYSTEM audio ===
             ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-                ProtoEncoder.writeVarintField(svc, 1, 6) // service_id = 6
-                ProtoEncoder.writeEmbeddedMessage(svc, 4) { sink ->
-                    ProtoEncoder.writeVarintField(sink, 1, 1) // available_type = AUDIO_PCM
-                    ProtoEncoder.writeVarintField(sink, 3, 2) // audio_type = SYSTEM (2)
-                    ProtoEncoder.writeEmbeddedMessage(sink, 2) { ac ->
+                ProtoEncoder.writeVarintField(svc, 1, 6)
+                ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
+                    ProtoEncoder.writeVarintField(sink, 1, 1)
+                    ProtoEncoder.writeVarintField(sink, 2, 2) // audio_type = SYSTEM
+                    ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
                         ProtoEncoder.writeVarintField(ac, 1, systemAudio.sampleRate.toLong())
                         ProtoEncoder.writeVarintField(ac, 2, systemAudio.bitDepth.toLong())
                         ProtoEncoder.writeVarintField(ac, 3, systemAudio.channelCount.toLong())
@@ -176,13 +176,13 @@ object ServiceDiscovery {
                 }
             }
 
-            // === Service 7: MediaSinkService (GUIDANCE/SPEECH audio) ===
+            // === Service 7: MediaSinkService for GUIDANCE/SPEECH ===
             ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-                ProtoEncoder.writeVarintField(svc, 1, 7) // service_id = 7
-                ProtoEncoder.writeEmbeddedMessage(svc, 4) { sink ->
-                    ProtoEncoder.writeVarintField(sink, 1, 1) // available_type = AUDIO_PCM
-                    ProtoEncoder.writeVarintField(sink, 3, 1) // audio_type = GUIDANCE/SPEECH (1)
-                    ProtoEncoder.writeEmbeddedMessage(sink, 2) { ac ->
+                ProtoEncoder.writeVarintField(svc, 1, 7)
+                ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
+                    ProtoEncoder.writeVarintField(sink, 1, 1)
+                    ProtoEncoder.writeVarintField(sink, 2, 1) // audio_type = GUIDANCE
+                    ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
                         ProtoEncoder.writeVarintField(ac, 1, speechAudio.sampleRate.toLong())
                         ProtoEncoder.writeVarintField(ac, 2, speechAudio.bitDepth.toLong())
                         ProtoEncoder.writeVarintField(ac, 3, speechAudio.channelCount.toLong())
@@ -191,11 +191,10 @@ object ServiceDiscovery {
             }
         }
 
-        // === Service 9: MediaPlaybackStatusService (empty, just marker) ===
+        // === Service 9: MediaPlaybackService (field 9 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-            ProtoEncoder.writeVarintField(svc, 1, 9) // service_id = 9
-            // MediaPlaybackStatusService (field 8, empty)
-            ProtoEncoder.writeEmbeddedMessage(svc, 8) { /* empty */ }
+            ProtoEncoder.writeVarintField(svc, 1, 9)
+            ProtoEncoder.writeEmbeddedMessage(svc, 9) { /* empty */ }
         }
 
         return out.toByteArray()
@@ -203,7 +202,7 @@ object ServiceDiscovery {
 
     fun buildMediaSetupResponse(configIndex: Int = 0, maxUnacked: Int = 1): ByteArray {
         val out = ByteArrayOutputStream()
-        ProtoEncoder.writeVarintField(out, 1, 2) // status = HEADUNIT
+        ProtoEncoder.writeVarintField(out, 1, 2)
         ProtoEncoder.writeVarintField(out, 2, maxUnacked.toLong())
         ProtoEncoder.writeVarintField(out, 3, configIndex.toLong())
         return out.toByteArray()
@@ -215,17 +214,9 @@ object ServiceDiscovery {
         return out.toByteArray()
     }
 
-    fun buildSensorStartResponse(status: Int = 0): ByteArray {
-        val out = ByteArrayOutputStream()
-        ProtoEncoder.writeVarintField(out, 1, status.toLong())
-        return out.toByteArray()
-    }
-
-    fun buildChannelOpenResponse(status: Int = 0): ByteArray {
-        val out = ByteArrayOutputStream()
-        ProtoEncoder.writeVarintField(out, 1, status.toLong())
-        return out.toByteArray()
-    }
+    fun buildSensorStartResponse(status: Int = 0) = buildAuthComplete(status)
+    fun buildChannelOpenResponse(status: Int = 0) = buildAuthComplete(status)
+    fun buildInputBindingResponse(status: Int = 0) = buildAuthComplete(status)
 
     fun buildPingResponse(timestamp: Long): ByteArray {
         val out = ByteArrayOutputStream()
@@ -236,17 +227,11 @@ object ServiceDiscovery {
     fun buildDrivingStatusEvent(status: Int = 0): ByteArray {
         val out = ByteArrayOutputStream()
         ProtoEncoder.writeEmbeddedMessage(out, 1) { event ->
-            ProtoEncoder.writeVarintField(event, 1, 11) // DRIVING_STATUS sensor type
+            ProtoEncoder.writeVarintField(event, 1, 11)
             ProtoEncoder.writeEmbeddedMessage(event, 4) { ds ->
-                ProtoEncoder.writeVarintField(ds, 1, status.toLong()) // 0 = UNRESTRICTED
+                ProtoEncoder.writeVarintField(ds, 1, status.toLong())
             }
         }
-        return out.toByteArray()
-    }
-
-    fun buildInputBindingResponse(status: Int = 0): ByteArray {
-        val out = ByteArrayOutputStream()
-        ProtoEncoder.writeVarintField(out, 1, status.toLong())
         return out.toByteArray()
     }
 

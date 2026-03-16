@@ -69,9 +69,18 @@ class ControlChannelHandler(
             }
 
             MessageType.AUDIO_FOCUS_REQUEST -> {
-                Timber.d("Received AudioFocusRequest")
-                val response = ServiceDiscovery.buildAudioFocusResponse(focusType = 1)
-                mux.sendEncrypted(ChannelId.CONTROL, MessageType.AUDIO_FOCUS_RESPONSE, response)
+                // Parse the request to see what audio focus is being requested
+                try {
+                    val fields = ProtoEncoder.readFields(body)
+                    Timber.i("CTRL: AudioFocusRequest: ${fields.map { "f${it.fieldNumber}=${it.varintValue}" }}")
+                } catch (_: Exception) {}
+
+                // Respond with AudioFocusNotification: focus_state=GAIN(1), unsolicited=false
+                val out = java.io.ByteArrayOutputStream()
+                ProtoEncoder.writeVarintField(out, 1, 1) // focus_state = GAIN
+                ProtoEncoder.writeVarintField(out, 2, 0) // unsolicited = false
+                mux.sendEncrypted(ChannelId.CONTROL, MessageType.AUDIO_FOCUS_RESPONSE, out.toByteArray())
+                Timber.i("CTRL: Sent AudioFocusResponse (GAIN)")
             }
 
             MessageType.NAVIGATION_FOCUS_REQUEST -> {
