@@ -55,18 +55,27 @@ object ServiceDiscovery {
     ): ByteArray {
         val out = ByteArrayOutputStream()
 
-        // HeadUnitInfo (field 9, embedded message)
-        ProtoEncoder.writeEmbeddedMessage(out, 9) { hu ->
-            ProtoEncoder.writeStringField(hu, 1, huInfo.make)       // make
-            ProtoEncoder.writeStringField(hu, 2, huInfo.model)      // model
-            ProtoEncoder.writeStringField(hu, 3, huInfo.huMake)     // hu_make
-            ProtoEncoder.writeStringField(hu, 4, huInfo.huModel)    // hu_model
-            ProtoEncoder.writeStringField(hu, 5, huInfo.swBuild)    // sw_build
-            ProtoEncoder.writeStringField(hu, 6, huInfo.swVersion)  // sw_version
-        }
-
-        // Driver position: LEFT = 1 (field 10)
-        ProtoEncoder.writeVarintField(out, 10, 1)
+        // Top-level fields matching ServiceDiscoveryResponse proto:
+        // field 2: make (string)
+        ProtoEncoder.writeStringField(out, 2, huInfo.make)
+        // field 3: model (string)
+        ProtoEncoder.writeStringField(out, 3, huInfo.model)
+        // field 4: year (string)
+        ProtoEncoder.writeStringField(out, 4, "2024")
+        // field 5: vehicle_id (string)
+        ProtoEncoder.writeStringField(out, 5, "SUPERTESLA001")
+        // field 6: driver_position (enum, LEFT=1)
+        ProtoEncoder.writeVarintField(out, 6, 1)
+        // field 7: head_unit_make (string)
+        ProtoEncoder.writeStringField(out, 7, huInfo.huMake)
+        // field 8: head_unit_model (string)
+        ProtoEncoder.writeStringField(out, 8, huInfo.huModel)
+        // field 9: head_unit_software_build (string)
+        ProtoEncoder.writeStringField(out, 9, huInfo.swBuild)
+        // field 10: head_unit_software_version (string)
+        ProtoEncoder.writeStringField(out, 10, huInfo.swVersion)
+        // field 11: can_play_native_media_during_vr (bool)
+        ProtoEncoder.writeVarintField(out, 11, 0)
 
         // === Service 1: InputSourceService (touchscreen + keycodes) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->

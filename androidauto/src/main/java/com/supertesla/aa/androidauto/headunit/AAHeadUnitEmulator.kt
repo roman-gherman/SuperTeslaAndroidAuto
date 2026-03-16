@@ -134,18 +134,16 @@ class AAHeadUnitEmulator(
             performTlsHandshake(framer, crypto, input, output)
             Timber.i("AA-EMU: TLS handshake done!")
 
-            // 5. Send CLEARTEXT message (TaaDa sends this AFTER SSL handshake)
-            Timber.i("AA-EMU: Sending CLEARTEXT...")
+            // 5. Send AuthComplete as RAW AAP frame (not encrypted).
+            //    This is TaaDa's CLEARTEXT_DATA {0,3,0,4,0,4,8,0} which is
+            //    an AAP frame with AuthComplete(status=0). It's sent in cleartext
+            //    on the socket right after TLS completes, before encrypted messaging begins.
+            Timber.i("AA-EMU: Sending AuthComplete (cleartext AAP frame)...")
             output.write(HeadUnitConfig.CLEARTEXT_MSG)
             output.flush()
-            Timber.i("AA-EMU: CLEARTEXT sent")
+            Timber.i("AA-EMU: AuthComplete sent (cleartext)")
 
-            // 6. Auth complete
-            val authPayload = ServiceDiscovery.buildAuthComplete(status = 0)
-            framer.writeFrame(output, ChannelId.CONTROL, AapFramer.FLAG_BULK, MessageType.AUTH_COMPLETE, authPayload)
-            Timber.i("AA-EMU: Sent AuthComplete")
-
-            // 6. Create channel mux and register handlers
+            // 6. Create channel mux for encrypted messaging
             val channelMux = ChannelMux(framer, crypto, input, output)
             mux = channelMux
             setState(State.Connected)
