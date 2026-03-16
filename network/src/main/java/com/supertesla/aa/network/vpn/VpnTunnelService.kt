@@ -27,11 +27,20 @@ class VpnTunnelService : VpnService() {
             Timber.d("Establishing VPN tunnel with IP: $virtualIp")
             val builder = Builder()
             builder.setSession("SuperTeslaAA")
-            builder.addAddress(virtualIp, 32)
-            builder.addRoute("10.0.0.0", 8)        // 10.x.x.x (some hotspots)
-            builder.addRoute("192.168.0.0", 16)    // 192.168.x.x (standard hotspots)
+            builder.addAddress(virtualIp, 24)
+            builder.addDnsServer("8.8.8.8")
+            builder.addRoute("0.0.0.0", 0)         // Route all traffic
             builder.setMtu(1500)
             builder.setBlocking(false)
+
+            // CRITICAL: Exclude Android Auto from VPN to prevent routing loops.
+            // AA connects to localhost:5288 — its traffic must go directly, not through VPN.
+            try {
+                builder.addDisallowedApplication(AA_PACKAGE)
+                Timber.d("Excluded $AA_PACKAGE from VPN")
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to exclude AA package from VPN")
+            }
 
             tunInterface = builder.establish()
             currentVirtualIp = if (tunInterface != null) virtualIp else null
@@ -81,5 +90,6 @@ class VpnTunnelService : VpnService() {
 
     companion object {
         const val EXTRA_VIRTUAL_IP = "extra_virtual_ip"
+        const val AA_PACKAGE = "com.google.android.projection.gearhead"
     }
 }

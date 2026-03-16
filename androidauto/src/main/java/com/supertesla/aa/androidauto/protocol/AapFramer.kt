@@ -81,6 +81,7 @@ class AapFramer {
         val channel = header[0].toInt() and 0xFF
         val flags = header[1].toInt() and 0xFF
         val payloadLength = ((header[2].toInt() and 0xFF) shl 8) or (header[3].toInt() and 0xFF)
+        Timber.d("FRAME-READ: header=[${header.joinToString(",") { (it.toInt() and 0xFF).toString() }}] ch=$channel flags=0x${flags.toString(16)} payloadLen=$payloadLength")
 
         if (payloadLength > MAX_FRAME_PAYLOAD) {
             throw IOException("Frame payload too large: $payloadLength bytes (max $MAX_FRAME_PAYLOAD)")

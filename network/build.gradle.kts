@@ -49,4 +49,7 @@ dependencies {
 
     // WebRTC
     implementation(libs.webrtc)
+
+    // WebSocket Server (for TaaDa-style 3-port relay)
+    api(libs.java.websocket)
 }

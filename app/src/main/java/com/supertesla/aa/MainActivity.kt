@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,9 +22,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.supertesla.aa.receiver.TeslaBluetoothReceiver
-import com.supertesla.aa.service.MainService
+import com.supertesla.aa.service.TransporterService
 import com.supertesla.aa.ui.MainScreen
 import com.supertesla.aa.ui.MainViewModel
+import com.supertesla.aa.ui.PermissionsScreen
 import com.supertesla.aa.ui.settings.SettingsScreen
 import com.supertesla.aa.ui.theme.*
 import com.supertesla.aa.ui.wizard.SetupWizardScreen
@@ -38,17 +40,26 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         val wizardCompleted = prefs.getBoolean("wizard_completed", false)
         val teslaDetected = intent?.getBooleanExtra(TeslaBluetoothReceiver.EXTRA_TESLA_DETECTED, false) ?: false
+        val autoStart = intent?.getBooleanExtra(TeslaBluetoothReceiver.EXTRA_AUTO_START, false) ?: false
 
         setContent {
             SuperTeslaAATheme {
                 var screen by remember {
                     mutableStateOf(
                         when {
+                            autoStart && wizardCompleted -> "main"
                             teslaDetected && wizardCompleted -> "tesla_prompt"
                             wizardCompleted -> "main"
                             else -> "wizard"
                         }
                     )
+                }
+
+                // Auto-start the service when launched from BT notification "Start" action
+                LaunchedEffect(autoStart) {
+                    if (autoStart && wizardCompleted) {
+                        TransporterService.start(this@MainActivity)
+                    }
                 }
 
                 when (screen) {
@@ -60,6 +71,10 @@ class MainActivity : ComponentActivity() {
                     )
                     "settings" -> SettingsScreen(
                         onBack = { screen = "main" }
+                    )
+                    "permissions" -> PermissionsScreen(
+                        onBack = { screen = "main" },
+                        onAllGranted = { /* stay on screen */ }
                     )
                     "tesla_prompt" -> {
                         Surface(
@@ -104,7 +119,7 @@ class MainActivity : ComponentActivity() {
                                 Button(
                                     onClick = {
                                         screen = "main"
-                                        MainService.start(this@MainActivity)
+                                        TransporterService.start(this@MainActivity)
                                     },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -157,7 +172,8 @@ class MainActivity : ComponentActivity() {
                         val viewModel: MainViewModel = hiltViewModel()
                         MainScreen(
                             viewModel = viewModel,
-                            onSettings = { screen = "settings" }
+                            onSettings = { screen = "settings" },
+                            onPermissions = { screen = "permissions" }
                         )
                     }
                 }

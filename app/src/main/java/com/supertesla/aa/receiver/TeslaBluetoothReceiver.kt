@@ -12,19 +12,26 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.supertesla.aa.MainActivity
 import com.supertesla.aa.service.MainService
+import com.supertesla.aa.service.TransporterService
 import timber.log.Timber
 
 /**
  * Monitors Bluetooth connections for Tesla devices.
- * When a Tesla is detected, shows a notification offering to start streaming.
  *
- * Tesla Bluetooth names typically contain "Tesla" (e.g. "Tesla Model 3").
+ * Behavior depends on user configuration:
+ * - If the device is in the "selected_bluetooth_devices" set → auto-start TransporterService
+ * - If the device name contains "Tesla" → show notification offering to start
  */
 class TeslaBluetoothReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != BluetoothDevice.ACTION_ACL_CONNECTED) return
+        when (intent.action) {
+            BluetoothDevice.ACTION_ACL_CONNECTED -> handleConnect(context, intent)
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> handleDisconnect(context, intent)
+        }
+    }
 
+    private fun handleConnect(context: Context, intent: Intent) {
         // Check BLUETOOTH_CONNECT permission on Android 12+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
@@ -40,17 +47,51 @@ class TeslaBluetoothReceiver : BroadcastReceiver() {
             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
         } ?: return
 
-        val deviceName = try {
-            device.name
-        } catch (e: SecurityException) {
-            null
-        } ?: return
+        val deviceName = try { device.name } catch (_: SecurityException) { null }
+        val deviceAddress = device.address
 
-        Timber.d("Bluetooth connected: $deviceName (${device.address})")
+        Timber.d("Bluetooth connected: $deviceName ($deviceAddress)")
 
-        if (isTeslaDevice(deviceName)) {
+        // Check if device is in user's selected auto-start list
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val selectedDevices = prefs.getStringSet(KEY_SELECTED_DEVICES, emptySet()) ?: emptySet()
+
+        if (deviceAddress in selectedDevices) {
+            // Auto-start TransporterService
+            Timber.i("Auto-starting TransporterService for selected device: $deviceName ($deviceAddress)")
+            TransporterService.start(context, "bluetooth-$deviceAddress")
+            return
+        }
+
+        // Fallback: show notification for Tesla-named devices
+        if (deviceName != null && isTeslaDevice(deviceName)) {
             Timber.i("Tesla detected via Bluetooth: $deviceName")
             showTeslaNotification(context, deviceName)
+        }
+    }
+
+    private fun handleDisconnect(context: Context, intent: Intent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+        } ?: return
+
+        val deviceAddress = device.address
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val selectedDevices = prefs.getStringSet(KEY_SELECTED_DEVICES, emptySet()) ?: emptySet()
+
+        if (deviceAddress in selectedDevices && TransporterService.isActive) {
+            Timber.i("Selected BT device disconnected ($deviceAddress) — stopping TransporterService")
+            TransporterService.stop(context)
         }
     }
 
@@ -115,5 +156,7 @@ class TeslaBluetoothReceiver : BroadcastReceiver() {
         const val NOTIFICATION_ID = 2001
         const val EXTRA_TESLA_DETECTED = "tesla_detected"
         const val EXTRA_AUTO_START = "auto_start"
+        const val PREFS_NAME = "supertesla_prefs"
+        const val KEY_SELECTED_DEVICES = "selected_bluetooth_devices"
     }
 }

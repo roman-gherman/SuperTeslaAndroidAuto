@@ -24,6 +24,7 @@ object MessageType {
     const val VOICE_SESSION_REQUEST: Int = 17
     const val AUDIO_FOCUS_REQUEST: Int = 18
     const val AUDIO_FOCUS_RESPONSE: Int = 19
+    const val VIDEO_FOCUS_NOTIFICATION: Int = 0x800F  // 32783 — video focus control
 }
 
 /**
@@ -78,6 +79,42 @@ object ChannelId {
  * AAP uses proto2 with simple fields; we encode manually to avoid the protobuf library dependency.
  */
 object ProtoEncoder {
+
+    /**
+     * Builder-style encode: creates a protobuf message using a DSL.
+     * Usage: ProtoEncoder.encode { writeVarint(1, 42L) }
+     */
+    fun encode(builder: ProtoBuilder.() -> Unit): ByteArray {
+        val b = ProtoBuilder()
+        b.builder()
+        return b.toByteArray()
+    }
+
+    class ProtoBuilder {
+        private val out = ByteArrayOutputStream()
+
+        fun writeVarint(fieldNumber: Int, value: Long) {
+            writeVarintField(out, fieldNumber, value)
+        }
+
+        fun writeString(fieldNumber: Int, value: String) {
+            writeStringField(out, fieldNumber, value)
+        }
+
+        fun writeBytes(fieldNumber: Int, value: ByteArray) {
+            writeBytesField(out, fieldNumber, value)
+        }
+
+        fun writeMessage(fieldNumber: Int, builder: ProtoBuilder.() -> Unit) {
+            writeEmbeddedMessage(out, fieldNumber) { inner ->
+                val b = ProtoBuilder()
+                b.builder()
+                inner.write(b.toByteArray())
+            }
+        }
+
+        fun toByteArray(): ByteArray = out.toByteArray()
+    }
 
     fun writeVarint(out: ByteArrayOutputStream, value: Long) {
         var v = value

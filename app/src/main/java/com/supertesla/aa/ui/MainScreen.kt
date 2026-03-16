@@ -1,9 +1,7 @@
 package com.supertesla.aa.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.net.VpnService
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,14 +9,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import com.supertesla.aa.R
 import androidx.compose.runtime.*
@@ -36,40 +31,28 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
 import com.supertesla.aa.core.model.HotspotState
-import com.supertesla.aa.service.MainService
+import com.supertesla.aa.service.TransporterService
 import com.supertesla.aa.ui.theme.*
 
 @Composable
-fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
+fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissions: () -> Unit = {}) {
     val appState by viewModel.appState.collectAsStateWithLifecycle()
     val hotspotState by viewModel.hotspotState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var vpnPermissionGranted by remember { mutableStateOf(false) }
 
-    // Screen capture permission launcher
-    val screenCaptureLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            MainService.startCapture(context, result.resultCode, result.data!!)
-        }
-    }
-
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
         vpnPermissionGranted = true
-        MainService.start(context)
-        // Request screen capture after service starts
-        val projManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        screenCaptureLauncher.launch(projManager.createScreenCaptureIntent())
+        TransporterService.start(context)
     }
 
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ ->
-        requestVpnAndStart(context, vpnLauncher, screenCaptureLauncher) { vpnPermissionGranted = true }
+        requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
     }
 
     Surface(
@@ -130,6 +113,16 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
             // Status indicators
             StatusCard(appState = appState, hotspotState = hotspotState)
 
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onPermissions,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = MaterialTheme.shapes.medium,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TeslaBlue)
+            ) {
+                Text("Check Permissions", style = MaterialTheme.typography.bodyLarge)
+            }
+
             // Error
             if (appState is AppState.Error) {
                 Spacer(Modifier.height(20.dp))
@@ -178,8 +171,8 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
             // Big START / STOP button
             Button(
                 onClick = {
-                    if (appState.isRunning) {
-                        MainService.stop(context)
+                    if (appState.isRunning || TransporterService.isActive) {
+                        TransporterService.stop(context)
                     } else {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
@@ -187,7 +180,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                         ) {
                             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
-                            requestVpnAndStart(context, vpnLauncher, screenCaptureLauncher) { vpnPermissionGranted = true }
+                            requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
                         }
                     }
                 },
@@ -197,7 +190,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                     .height(72.dp),
                 shape = MaterialTheme.shapes.large,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (appState.isRunning) TeslaRed else TeslaBlue,
+                    containerColor = if (appState.isRunning || TransporterService.isActive) TeslaRed else TeslaBlue,
                     disabledContainerColor = TeslaSurfaceVariant
                 )
             ) {
@@ -209,9 +202,9 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}) {
                     )
                 } else {
                     Text(
-                        text = if (appState.isRunning) "STOP" else "START",
+                        text = if (appState.isRunning || TransporterService.isActive) "STOP" else "START",
                         style = MaterialTheme.typography.headlineMedium,
-                        color = if (appState.isRunning) TeslaWhite else TeslaDark
+                        color = if (appState.isRunning || TransporterService.isActive) TeslaWhite else TeslaDark
                     )
                 }
             }
@@ -231,6 +224,24 @@ private fun StatusCard(appState: AppState, hotspotState: HotspotState) {
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             StatusRow(
+                label = "Service",
+                isActive = TransporterService.isActive,
+                detail = if (TransporterService.isActive) "Running" else "Stopped"
+            )
+            Spacer(Modifier.height(16.dp))
+            StatusRow(
+                label = "Android Auto",
+                isActive = TransporterService.isConnected,
+                detail = if (TransporterService.isConnected) "Connected" else "Waiting..."
+            )
+            Spacer(Modifier.height(16.dp))
+            StatusRow(
+                label = "Video",
+                isActive = TransporterService.isVideoActive,
+                detail = if (TransporterService.isVideoActive) "Streaming" else "Off"
+            )
+            Spacer(Modifier.height(16.dp))
+            StatusRow(
                 label = "Hotspot",
                 isActive = hotspotState is HotspotState.Enabled || hotspotState is HotspotState.ClientConnected,
                 detail = when (hotspotState) {
@@ -239,18 +250,6 @@ private fun StatusCard(appState: AppState, hotspotState: HotspotState) {
                     is HotspotState.Disabled -> "Off"
                     is HotspotState.Unknown -> "Off"
                 }
-            )
-            Spacer(Modifier.height(16.dp))
-            StatusRow(
-                label = "Server",
-                isActive = appState is AppState.ServerRunning || appState is AppState.Streaming,
-                detail = if (appState is AppState.ServerRunning || appState is AppState.Streaming) "Running" else "Stopped"
-            )
-            Spacer(Modifier.height(16.dp))
-            StatusRow(
-                label = "Tesla",
-                isActive = hotspotState is HotspotState.ClientConnected,
-                detail = if (hotspotState is HotspotState.ClientConnected) "Connected" else "Waiting..."
             )
         }
     }
@@ -303,12 +302,18 @@ private fun UrlCard(url: String) {
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = url,
+                text = AppConfig.PUBLIC_DOMAIN,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
                 color = TeslaBlue
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "or: ${AppConfig.getServerUrlFallback()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = TeslaDimText
             )
         }
     }
@@ -340,18 +345,13 @@ private fun ErrorCard(error: AppState.Error) {
 private fun requestVpnAndStart(
     context: android.content.Context,
     vpnLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>,
-    screenCaptureLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>,
     onAlreadyGranted: () -> Unit
 ) {
     val prepareIntent = VpnService.prepare(context)
     if (prepareIntent != null) {
-        // VPN permission needed - after granted, it will also request screen capture
         vpnLauncher.launch(prepareIntent)
     } else {
-        // VPN already granted - start service and request screen capture
         onAlreadyGranted()
-        MainService.start(context)
-        val projManager = context.getSystemService(android.content.Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        screenCaptureLauncher.launch(projManager.createScreenCaptureIntent())
+        TransporterService.start(context)
     }
 }

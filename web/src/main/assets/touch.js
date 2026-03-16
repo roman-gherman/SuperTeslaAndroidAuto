@@ -39,14 +39,38 @@
         };
     }
 
+    // Display resolution (must match AA config)
+    var DISPLAY_W = 1280;
+    var DISPLAY_H = 720;
+
     function sendTouch(action, pointerId, coords) {
+        // Convert to pixel coordinates for AA protocol relay
+        var pixelX = Math.round(coords.x * DISPLAY_W);
+        var pixelY = Math.round(coords.y * DISPLAY_H);
+
+        // Build all current touch points
+        var allTouches = [];
+        var ids = Object.keys(activePointers);
+        for (var i = 0; i < ids.length; i++) {
+            var id = parseInt(ids[i]);
+            allTouches.push({
+                id: id,
+                x: Math.round(activePointers[id].x * DISPLAY_W),
+                y: Math.round(activePointers[id].y * DISPLAY_H)
+            });
+        }
+
+        // TaaDa MULTITOUCH format (preferred for AA relay mode)
+        var aaAction = {
+            'down': 'MULTITOUCH_DOWN',
+            'move': 'MULTITOUCH_MOVE',
+            'up': 'MULTITOUCH_UP'
+        }[action] || action;
+
         var msg = JSON.stringify({
-            type: 'touch',
-            action: action,
-            pointerId: pointerId,
-            x: coords.x,
-            y: coords.y,
-            timestamp: Date.now()
+            action: aaAction,
+            touches: [{ id: pointerId, x: pixelX, y: pixelY }],
+            allTouches: allTouches
         });
 
         // Prefer DataChannel (lower latency) over WebSocket

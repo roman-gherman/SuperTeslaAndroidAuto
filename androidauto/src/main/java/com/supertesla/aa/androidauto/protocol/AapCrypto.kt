@@ -1,9 +1,12 @@
 package com.supertesla.aa.androidauto.protocol
 
+import android.content.Context
 import timber.log.Timber
 import java.nio.ByteBuffer
+import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLEngineResult
@@ -30,19 +33,57 @@ class AapCrypto {
                 sslEngine.handshakeStatus == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING
 
     /**
-     * Initialize SSLEngine for TLS 1.2 in client mode.
-     * We act as the TLS client connecting to the AA server.
+     * Initialize SSLEngine for TLS 1.2 in client mode with client certificate.
+     * TaaDa uses KeyManagerFactory to present a client cert — AA requires it.
      */
-    fun init() {
+    fun init(context: Context? = null) {
         val sslContext = SSLContext.getInstance("TLSv1.2")
-        sslContext.init(null, arrayOf<TrustManager>(TrustAllManager()), SecureRandom())
+
+        // Load keystore for client certificate (required by AA)
+        val keyManagers = if (context != null) {
+            try {
+                val keyStore = KeyStore.getInstance("PKCS12")
+                val keystoreStream = context.resources.openRawResource(
+                    context.resources.getIdentifier("keystore", "raw", context.packageName)
+                )
+                keyStore.load(keystoreStream, "aa".toCharArray())
+                keystoreStream.close()
+
+                val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+                kmf.init(keyStore, "aa".toCharArray())
+                Timber.i("SSL: Keystore loaded, client certificate available")
+                kmf.keyManagers
+            } catch (e: Exception) {
+                Timber.w(e, "SSL: Failed to load keystore, proceeding without client cert")
+                null
+            }
+        } else {
+            Timber.w("SSL: No context provided, no client certificate")
+            null
+        }
+
+        sslContext.init(keyManagers, arrayOf<TrustManager>(TrustAllManager()), SecureRandom())
 
         sslEngine = sslContext.createSSLEngine()
         sslEngine.useClientMode = true
 
+        // Enable TLSv1.3 if available (TaaDa prefers it)
+        try {
+            sslEngine.enabledProtocols = arrayOf("TLSv1.3", "TLSv1.2")
+            Timber.i("SSL: Enabled TLSv1.3 + TLSv1.2")
+        } catch (e: Exception) {
+            sslEngine.enabledProtocols = arrayOf("TLSv1.2")
+            Timber.i("SSL: TLSv1.3 not available, using TLSv1.2 only")
+        }
+
+        Timber.i("SSL: Enabled protocols: ${sslEngine.enabledProtocols.joinToString()}")
+        Timber.i("SSL: UseClientMode: ${sslEngine.useClientMode}")
+        Timber.i("SSL: HasKeyManagers: ${keyManagers != null}")
+
         val session = sslEngine.session
         netOutBuffer = ByteBuffer.allocate(session.packetBufferSize)
         appInBuffer = ByteBuffer.allocate(session.applicationBufferSize)
+        Timber.i("SSL: Buffers: packetSize=${session.packetBufferSize}, appSize=${session.applicationBufferSize}")
     }
 
     /**

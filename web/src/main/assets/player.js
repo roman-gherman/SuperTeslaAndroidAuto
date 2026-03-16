@@ -135,6 +135,9 @@
             if (window.SuperTeslaTouch) {
                 window.SuperTeslaTouch.setWebSocket(ws);
             }
+            // Tell server we're ready for video (AA relay mode control messages)
+            ws.send(JSON.stringify({ action: 'START' }));
+            ws.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
         };
 
         ws.onmessage = function(event) {

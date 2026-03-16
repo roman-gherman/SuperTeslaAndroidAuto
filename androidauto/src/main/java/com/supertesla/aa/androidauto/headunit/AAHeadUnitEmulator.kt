@@ -22,27 +22,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.ServerSocket
 import java.net.Socket
 
 /**
- * Android Auto Head Unit Emulator.
+ * Android Auto Head Unit Emulator — Server Mode.
  *
- * Connects to the AA Head Unit Server running on the phone (localhost:5277),
- * performs the AAP handshake, and manages all channels.
+ * Listens on port 5288 for Android Auto (Gearhead) to connect,
+ * performs the TaaDa-style handshake, and manages all channels.
  *
  * Flow:
- * 1. TCP connect to localhost:5277
- * 2. Version exchange (unencrypted)
- * 3. TLS handshake via SSL_HANDSHAKE messages
- * 4. Auth complete
- * 5. Service discovery (phone asks, we respond with capabilities)
- * 6. Channel open (phone opens video, audio, input, sensor channels)
- * 7. Media streaming begins
+ * 1. Listen on ServerSocket(5288)
+ * 2. Accept connection from AA
+ * 3. Send CAR_HELLO, receive PHONE_HELLO, send CLEARTEXT
+ * 4. TLS handshake via SSL_HANDSHAKE messages
+ * 5. Auth complete
+ * 6. Service discovery (phone asks, we respond with capabilities)
+ * 7. Channel open (phone opens video, audio, input, sensor channels)
+ * 8. Media streaming begins
  */
 class AAHeadUnitEmulator(
-    private val config: HeadUnitConfig = HeadUnitConfig()
+    private val config: HeadUnitConfig = HeadUnitConfig(),
+    private val context: android.content.Context? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var serverSocket: ServerSocket? = null
     private var socket: Socket? = null
     private var readLoopJob: Job? = null
     private var mux: ChannelMux? = null
@@ -63,8 +69,9 @@ class AAHeadUnitEmulator(
 
     sealed class State {
         data object Disconnected : State()
+        data object Listening : State()
         data object Connecting : State()
-        data object VersionExchange : State()
+        data object Handshake : State()
         data object SslHandshake : State()
         data object Connected : State()
         data object Streaming : State()
@@ -82,46 +89,70 @@ class AAHeadUnitEmulator(
     }
 
     /**
-     * Connect to the AA head unit server and start the protocol handshake.
+     * Listen for AA connection on port 5288 and perform the full handshake.
+     * This blocks until AA connects and handshake completes (or fails).
      */
-    suspend fun connect() = withContext(Dispatchers.IO) {
+    suspend fun listenAndConnect() = withContext(Dispatchers.IO) {
         try {
-            setState(State.Connecting)
+            // 1. Create ServerSocket and wait for AA to connect
+            setState(State.Listening)
+            Timber.i("AA-EMU: ========== LISTENING on port ${config.port} ==========")
 
-            // 1. TCP connect
-            Timber.i("Connecting to ${config.host}:${config.port}...")
-            socket = Socket(config.host, config.port).apply {
-                tcpNoDelay = true
-                soTimeout = 0  // blocking reads
+            serverSocket = ServerSocket(config.port).apply {
+                reuseAddress = true
+                soTimeout = 0  // block indefinitely waiting for connection
             }
-            Timber.i("TCP connected to ${config.host}:${config.port}")
+            Timber.i("AA-EMU: ServerSocket created, waiting for accept()...")
 
-            val input = socket!!.getInputStream()
-            val output = socket!!.getOutputStream()
+            val clientSocket = serverSocket!!.accept()
+            Timber.i("AA-EMU: ========== CONNECTION ACCEPTED from ${clientSocket.remoteSocketAddress} ==========")
+
+            // Close server socket — we only accept one connection
+            try { serverSocket?.close() } catch (_: Exception) {}
+            serverSocket = null
+
+            // 2. Configure socket (TaaDa settings)
+            setState(State.Connecting)
+            configureSocket(clientSocket)
+            socket = clientSocket
+            Timber.i("AA-EMU: Socket configured")
+
+            val input = clientSocket.getInputStream()
+            val output = clientSocket.getOutputStream()
             val framer = AapFramer()
             val crypto = AapCrypto()
 
-            // 2. Version exchange
-            setState(State.VersionExchange)
-            performVersionExchange(framer, input, output)
+            // 3. TaaDa-style handshake: CAR_HELLO → PHONE_HELLO
+            Timber.i("AA-EMU: Starting car handshake...")
+            setState(State.Handshake)
+            performCarHandshake(input, output)
+            Timber.i("AA-EMU: Car handshake done!")
 
-            // 3. TLS handshake
+            // 4. TLS handshake (BEFORE cleartext — TaaDa order)
+            Timber.i("AA-EMU: Starting TLS handshake...")
             setState(State.SslHandshake)
             performTlsHandshake(framer, crypto, input, output)
+            Timber.i("AA-EMU: TLS handshake done!")
 
-            // 4. Auth complete
+            // 5. Send CLEARTEXT message (TaaDa sends this AFTER SSL handshake)
+            Timber.i("AA-EMU: Sending CLEARTEXT...")
+            output.write(HeadUnitConfig.CLEARTEXT_MSG)
+            output.flush()
+            Timber.i("AA-EMU: CLEARTEXT sent")
+
+            // 6. Auth complete
             val authPayload = ServiceDiscovery.buildAuthComplete(status = 0)
             framer.writeFrame(output, ChannelId.CONTROL, AapFramer.FLAG_BULK, MessageType.AUTH_COMPLETE, authPayload)
-            Timber.i("Sent AuthComplete")
+            Timber.i("AA-EMU: Sent AuthComplete")
 
-            // 5. Create channel mux and register handlers
+            // 6. Create channel mux and register handlers
             val channelMux = ChannelMux(framer, crypto, input, output)
             mux = channelMux
             setState(State.Connected)
 
             setupChannelHandlers(channelMux)
 
-            // 6. Start read loop (blocks until disconnect)
+            // 7. Start read loop (blocks until disconnect)
             readLoopJob = scope.launch {
                 channelMux.readLoop()
             }
@@ -131,94 +162,170 @@ class AAHeadUnitEmulator(
 
         } catch (e: CancellationException) {
             throw e
+        } catch (e: java.io.IOException) {
+            Timber.w(e, "AAEmulator connection lost (IO error)")
+            setState(State.Error("Connection lost: ${e.message}"))
+            // Don't rethrow IO exceptions — AA disconnecting is expected during development
         } catch (e: Exception) {
             Timber.e(e, "AAEmulator connection failed")
             setState(State.Error(e.message ?: "Connection failed"))
-            throw e
         }
     }
 
     /**
-     * Step 2: Version exchange.
-     * HU sends VersionRequest, reads VersionResponse.
+     * Configure socket with TaaDa's exact settings for low-latency streaming.
      */
-    private fun performVersionExchange(
-        framer: AapFramer,
-        input: java.io.InputStream,
-        output: java.io.OutputStream
-    ) {
-        // Send: version major=1, minor=1
-        val versionPayload = byteArrayOf(0x00, 0x01, 0x00, 0x01)
-        framer.writeFrame(output, ChannelId.CONTROL, AapFramer.FLAG_BULK, MessageType.VERSION_REQUEST, versionPayload)
-        Timber.d("Sent VersionRequest (1.1)")
-
-        // Read response
-        val response = framer.readFrame(input)
-        if (response.messageType != MessageType.VERSION_RESPONSE) {
-            throw IOException("Expected VersionResponse (type=2), got type=${response.messageType}")
-        }
-
-        val body = response.messageBody
-        if (body.size >= 6) {
-            val major = ((body[0].toInt() and 0xFF) shl 8) or (body[1].toInt() and 0xFF)
-            val minor = ((body[2].toInt() and 0xFF) shl 8) or (body[3].toInt() and 0xFF)
-            val status = ((body[4].toInt() and 0xFF) shl 8) or (body[5].toInt() and 0xFF)
-            Timber.i("VersionResponse: $major.$minor, status=0x${status.toString(16)}")
-            if (status == 0xFFFF) {
-                throw IOException("Version mismatch reported by AA server")
-            }
-        } else {
-            Timber.w("VersionResponse too short: ${body.size} bytes")
-        }
+    private fun configureSocket(socket: Socket) {
+        socket.tcpNoDelay = true                          // Disable Nagle's algorithm
+        socket.soTimeout = config.socketTimeoutMs         // 10s read timeout
+        socket.keepAlive = true                           // TCP keepalive
+        socket.reuseAddress = true                        // Allow quick restart
+        socket.trafficClass = 16                          // IPTOS_LOWDELAY
+        socket.receiveBufferSize = config.socketBufferSize // 1MB
+        socket.sendBufferSize = config.socketBufferSize    // 1MB
+        Timber.d("Socket configured: tcpNoDelay=true, timeout=${config.socketTimeoutMs}ms, buffers=${config.socketBufferSize}")
     }
 
     /**
-     * Step 3: TLS handshake inside AAP SSL_HANDSHAKE messages.
-     * 2 rounds of wrap/unwrap via SSLEngine.
+     * TaaDa-style handshake:
+     * 1. Send CAR_HELLO bytes
+     * 2. Read PHONE_HELLO (with timeout)
+     * 3. Send CLEARTEXT bytes
+     */
+    private fun performCarHandshake(input: InputStream, output: OutputStream) {
+        // Step 1: Send CAR_HELLO
+        Timber.i("HANDSHAKE: Step 1 — Sending CAR_HELLO: ${HeadUnitConfig.CAR_HELLO.joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+        output.write(HeadUnitConfig.CAR_HELLO)
+        output.flush()
+
+        // Step 2: Read PHONE_HELLO (timeout already set on socket)
+        Timber.i("HANDSHAKE: Step 2 — Reading PHONE_HELLO...")
+        val headerBuf = ByteArray(4)
+        readExactly(input, headerBuf, 4)
+        Timber.i("HANDSHAKE: PHONE_HELLO header bytes: ${headerBuf.joinToString(",") { (it.toInt() and 0xFF).toString() }}")
+
+        val channel = headerBuf[0].toInt() and 0xFF
+        val flags = headerBuf[1].toInt() and 0xFF
+        val payloadLen = ((headerBuf[2].toInt() and 0xFF) shl 8) or (headerBuf[3].toInt() and 0xFF)
+
+        Timber.i("HANDSHAKE: PHONE_HELLO parsed: ch=$channel flags=0x${flags.toString(16)} payloadLen=$payloadLen")
+
+        if (payloadLen > 0 && payloadLen <= HeadUnitConfig.MAX_PAYLOAD_SIZE) {
+            val payload = ByteArray(payloadLen)
+            readExactly(input, payload, payloadLen)
+            Timber.i("HANDSHAKE: PHONE_HELLO payload (${payload.size} bytes): ${payload.take(32).joinToString(",") { (it.toInt() and 0xFF).toString() }}${if (payload.size > 32) "..." else ""}")
+        } else {
+            Timber.w("HANDSHAKE: PHONE_HELLO payload len suspicious: $payloadLen")
+        }
+
+        Timber.i("HANDSHAKE: Car handshake complete (CLEARTEXT will be sent after TLS)")
+    }
+
+    /**
+     * TLS handshake inside AAP SSL_HANDSHAKE messages.
+     * 2+ rounds of wrap/unwrap via SSLEngine.
      */
     private fun performTlsHandshake(
         framer: AapFramer,
         crypto: AapCrypto,
-        input: java.io.InputStream,
-        output: java.io.OutputStream
+        input: InputStream,
+        output: OutputStream
     ) {
-        crypto.init()
+        Timber.i("TLS: Initializing SSLEngine...")
+        crypto.init(context)
+        Timber.i("TLS: SSLEngine initialized, beginning handshake")
 
-        // Round 1: produce ClientHello and send
-        val clientHello = crypto.beginHandshake()
-        if (clientHello.isNotEmpty()) {
-            framer.writeFrame(output, ChannelId.CONTROL, AapFramer.FLAG_BULK, MessageType.SSL_HANDSHAKE, clientHello)
-            Timber.d("Sent SSL ClientHello (${clientHello.size} bytes)")
+        // TaaDa wraps SSL handshake data with a 6-byte header:
+        // {0x00, 0x03, (len+2)_hi, (len+2)_lo, 0x00, 0x03} + SSL data
+        // This is NOT the standard AAP writeFrame which adds a 2-byte msgType prefix.
+
+        fun sendSslData(data: ByteArray) {
+            val frameLen = data.size + 2
+            val frame = ByteArray(6 + data.size)
+            frame[0] = 0x00
+            frame[1] = 0x03
+            frame[2] = (frameLen shr 8).toByte()
+            frame[3] = (frameLen and 0xFF).toByte()
+            frame[4] = 0x00
+            frame[5] = 0x03
+            System.arraycopy(data, 0, frame, 6, data.size)
+            synchronized(output) {
+                output.write(frame)
+                output.flush()
+            }
+            Timber.i("TLS: Sent ${data.size} bytes wrapped in 6-byte header (total ${frame.size})")
         }
 
-        // Read ServerHello response
-        val serverHello = framer.readFrame(input)
-        if (serverHello.messageType != MessageType.SSL_HANDSHAKE) {
-            throw IOException("Expected SSL_HANDSHAKE (type=3), got type=${serverHello.messageType}")
-        }
-        Timber.d("Received SSL ServerHello (${serverHello.messageBody.size} bytes)")
+        fun readSslData(): ByteArray {
+            // Read 4-byte header
+            val hdr = ByteArray(4)
+            readExactly(input, hdr, 4)
+            val ch = hdr[0].toInt() and 0xFF
+            val flags = hdr[1].toInt() and 0xFF
+            val payloadLen = ((hdr[2].toInt() and 0xFF) shl 8) or (hdr[3].toInt() and 0xFF)
+            Timber.i("TLS: Read frame header: ch=$ch flags=0x${flags.toString(16)} payloadLen=$payloadLen")
 
-        // Process ServerHello and produce Round 2
-        val round2 = crypto.processHandshakeData(serverHello.messageBody)
-        if (round2.isNotEmpty()) {
-            framer.writeFrame(output, ChannelId.CONTROL, AapFramer.FLAG_BULK, MessageType.SSL_HANDSHAKE, round2)
-            Timber.d("Sent SSL Round 2 (${round2.size} bytes)")
-        }
+            if (payloadLen <= 0 || payloadLen > HeadUnitConfig.MAX_PAYLOAD_SIZE) {
+                throw IOException("TLS: Invalid frame payload length: $payloadLen")
+            }
 
-        // Read final handshake response (ChangeCipherSpec + Finished)
-        val serverFinished = framer.readFrame(input)
-        if (serverFinished.messageType == MessageType.SSL_HANDSHAKE) {
-            Timber.d("Received SSL Finished (${serverFinished.messageBody.size} bytes)")
-            val extra = crypto.processHandshakeData(serverFinished.messageBody)
-            if (extra.isNotEmpty()) {
-                framer.writeFrame(output, ChannelId.CONTROL, AapFramer.FLAG_BULK, MessageType.SSL_HANDSHAKE, extra)
+            val payload = ByteArray(payloadLen)
+            readExactly(input, payload, payloadLen)
+
+            // The payload starts with 2-byte sub-header {0x00, 0x03} — strip it
+            // to get the raw SSL data
+            return if (payloadLen >= 2 && payload[0] == 0x00.toByte() && payload[1] == 0x03.toByte()) {
+                Timber.i("TLS: Stripped 2-byte sub-header, SSL data: ${payloadLen - 2} bytes")
+                payload.copyOfRange(2, payloadLen)
+            } else {
+                // Might be standard AAP frame with msgType — strip 2-byte msgType
+                Timber.i("TLS: Payload starts with ${(payload[0].toInt() and 0xFF)},${(payload[1].toInt() and 0xFF)} — treating as raw SSL data after 2-byte prefix")
+                payload.copyOfRange(2, payloadLen)
             }
         }
 
-        if (crypto.isHandshakeComplete) {
-            Timber.i("TLS handshake completed successfully")
+        // Round 1: produce ClientHello and send
+        val clientHello = crypto.beginHandshake()
+        Timber.i("TLS: ClientHello produced: ${clientHello.size} bytes")
+        if (clientHello.isNotEmpty()) {
+            sendSslData(clientHello)
         } else {
-            Timber.w("TLS handshake may not be fully complete (status: ${crypto.isHandshakeComplete})")
+            Timber.w("TLS: ClientHello was empty!")
+        }
+
+        // Read ServerHello response
+        Timber.i("TLS: Reading ServerHello...")
+        val serverHelloData = readSslData()
+        Timber.i("TLS: ServerHello received: ${serverHelloData.size} bytes")
+
+        // Process ServerHello and produce Round 2
+        Timber.i("TLS: Processing ServerHello data...")
+        val round2 = crypto.processHandshakeData(serverHelloData)
+        Timber.i("TLS: Round 2 produced: ${round2.size} bytes, handshakeComplete=${crypto.isHandshakeComplete}")
+        if (round2.isNotEmpty()) {
+            sendSslData(round2)
+        }
+
+        if (crypto.isHandshakeComplete) {
+            Timber.i("TLS: ===== HANDSHAKE COMPLETED AFTER ROUND 2 =====")
+            return
+        }
+
+        // Read final handshake response (ChangeCipherSpec + Finished)
+        Timber.i("TLS: Reading final handshake data...")
+        val serverFinishedData = readSslData()
+        Timber.i("TLS: Final handshake received: ${serverFinishedData.size} bytes")
+
+        val extra = crypto.processHandshakeData(serverFinishedData)
+        Timber.i("TLS: Extra data after Finished: ${extra.size} bytes, handshakeComplete=${crypto.isHandshakeComplete}")
+        if (extra.isNotEmpty()) {
+            sendSslData(extra)
+        }
+
+        if (crypto.isHandshakeComplete) {
+            Timber.i("TLS: ===== HANDSHAKE COMPLETED SUCCESSFULLY =====")
+        } else {
+            Timber.e("TLS: !!!!! HANDSHAKE NOT COMPLETE !!!!!")
         }
     }
 
@@ -246,11 +353,9 @@ class AAHeadUnitEmulator(
             serviceDiscoveryPayload = serviceDiscoveryPayload,
             onChannelOpened = { channelId ->
                 Timber.i("Channel $channelId opened")
-                // After sensor channel opens, send driving status
                 if (channelId == ChannelId.SENSOR) {
                     sensorHandler?.sendDrivingStatus()
                 }
-                // After video channel opens, send video focus
                 if (channelId == ChannelId.VIDEO) {
                     val focusPayload = ServiceDiscovery.buildVideoFocusIndication()
                     channelMux.sendEncrypted(ChannelId.VIDEO, AvMessageType.VIDEO_FOCUS_INDICATION, focusPayload)
@@ -284,6 +389,51 @@ class AAHeadUnitEmulator(
     }
 
     /**
+     * Send a heartbeat PingRequest to keep the AA connection alive.
+     * Should be called every 2000ms from the TransporterService.
+     */
+    fun sendHeartbeat() {
+        try {
+            val timestamp = System.currentTimeMillis()
+            // PingRequest protobuf: field 1 (varint) = timestamp
+            val payload = com.supertesla.aa.androidauto.proto.ProtoEncoder.encode {
+                writeVarint(1, timestamp)
+            }
+            mux?.sendEncrypted(ChannelId.CONTROL, MessageType.PING_REQUEST, payload)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to send heartbeat")
+        }
+    }
+
+    /**
+     * Send video focus notification to AA.
+     * @param projected true = send video (PROJECTED mode), false = stop video (NATIVE mode)
+     * @param unsolicited true = keyframe request
+     */
+    fun sendVideoFocus(projected: Boolean, unsolicited: Boolean = false) {
+        try {
+            val payload = com.supertesla.aa.androidauto.proto.ProtoEncoder.encode {
+                // field 1: mode (1=PROJECTED, 2=NATIVE)
+                writeVarint(1, if (projected) 1L else 2L)
+                // field 2: unsolicited
+                if (unsolicited) writeVarint(2, 1L)
+            }
+            mux?.sendEncrypted(ChannelId.CONTROL, MessageType.VIDEO_FOCUS_NOTIFICATION, payload)
+            Timber.d("Sent VideoFocus: projected=$projected, unsolicited=$unsolicited")
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to send video focus")
+        }
+    }
+
+    /**
+     * Close the listening server socket (used when cancelling before AA connects).
+     */
+    fun cancelListening() {
+        try { serverSocket?.close() } catch (_: Exception) {}
+        serverSocket = null
+    }
+
+    /**
      * Disconnect from the AA server.
      */
     fun disconnect() {
@@ -292,9 +442,11 @@ class AAHeadUnitEmulator(
         readLoopJob = null
 
         try {
-            // Try sending shutdown
             mux?.sendEncrypted(ChannelId.CONTROL, MessageType.SHUTDOWN_REQUEST, ByteArray(0))
         } catch (_: Exception) {}
+
+        try { serverSocket?.close() } catch (_: Exception) {}
+        serverSocket = null
 
         try { socket?.close() } catch (_: Exception) {}
         socket = null
@@ -312,5 +464,14 @@ class AAHeadUnitEmulator(
     fun destroy() {
         disconnect()
         scope.cancel()
+    }
+
+    private fun readExactly(input: InputStream, buf: ByteArray, count: Int) {
+        var offset = 0
+        while (offset < count) {
+            val read = input.read(buf, offset, count - offset)
+            if (read == -1) throw IOException("Unexpected EOF (expected $count bytes, got $offset)")
+            offset += read
+        }
     }
 }
