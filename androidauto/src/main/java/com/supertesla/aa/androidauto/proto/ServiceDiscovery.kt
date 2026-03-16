@@ -66,17 +66,17 @@ object ServiceDiscovery {
     ): ByteArray {
         val out = ByteArrayOutputStream()
 
-        // Top-level fields
-        ProtoEncoder.writeStringField(out, 2, huInfo.make)         // make
-        ProtoEncoder.writeStringField(out, 3, huInfo.model)        // model
-        ProtoEncoder.writeStringField(out, 4, "2024")              // year
-        ProtoEncoder.writeStringField(out, 5, "SUPERTESLA001")     // vehicle_id
-        ProtoEncoder.writeVarintField(out, 6, 1)                   // driver_position=LEFT
-        ProtoEncoder.writeStringField(out, 7, huInfo.huMake)       // hu_make
-        ProtoEncoder.writeStringField(out, 8, huInfo.huModel)      // hu_model
-        ProtoEncoder.writeStringField(out, 9, huInfo.swBuild)      // sw_build
-        ProtoEncoder.writeStringField(out, 10, huInfo.swVersion)   // sw_version
-        ProtoEncoder.writeVarintField(out, 11, 0)                  // native_media=false
+        // HeadUnitInfo (field 17, embedded message) — TaaDa uses this, not top-level fields 2-10
+        ProtoEncoder.writeEmbeddedMessage(out, 17) { hu ->
+            ProtoEncoder.writeStringField(hu, 1, huInfo.make)       // make
+            ProtoEncoder.writeStringField(hu, 2, huInfo.model)      // model
+            ProtoEncoder.writeStringField(hu, 5, huInfo.huMake)     // head_unit_make
+            ProtoEncoder.writeStringField(hu, 6, huInfo.huModel)    // head_unit_model
+            ProtoEncoder.writeStringField(hu, 7, huInfo.swBuild)    // sw_build
+            ProtoEncoder.writeStringField(hu, 8, huInfo.swVersion)  // sw_version
+        }
+        // Driver position (field 6)
+        ProtoEncoder.writeVarintField(out, 6, 1) // LEFT
 
         // === Service 1: InputSourceService (field 4 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
@@ -119,41 +119,54 @@ object ServiceDiscovery {
                 ProtoEncoder.writeVarintField(sink, 1, 6)  // available_type = VIDEO_H264_BP (6)
                 ProtoEncoder.writeVarintField(sink, 7, 1)  // display_type = MAIN (1)
                 // video_configs = field 4
+                // VideoConfiguration: 1=codec_resolution(enum), 2=frame_rate(enum),
+                //   3=width_margin, 4=height_margin, 5=density
                 ProtoEncoder.writeEmbeddedMessage(sink, 4) { vc ->
-                    ProtoEncoder.writeVarintField(vc, 1, 1) // codec_resolution
-                    ProtoEncoder.writeVarintField(vc, 2, videoConfig.width.toLong())
-                    ProtoEncoder.writeVarintField(vc, 3, videoConfig.height.toLong())
-                    ProtoEncoder.writeVarintField(vc, 4, videoConfig.fps.toLong())
-                    ProtoEncoder.writeVarintField(vc, 5, videoConfig.density.toLong())
-                    ProtoEncoder.writeVarintField(vc, 6, videoConfig.marginWidth.toLong())
-                    ProtoEncoder.writeVarintField(vc, 7, videoConfig.marginHeight.toLong())
+                    ProtoEncoder.writeVarintField(vc, 1, 2) // codec_resolution = VIDEO_1280x720(2)
+                    ProtoEncoder.writeVarintField(vc, 2, 2) // frame_rate = VIDEO_FPS_30(2)
+                    ProtoEncoder.writeVarintField(vc, 3, videoConfig.marginWidth.toLong())  // width_margin
+                    ProtoEncoder.writeVarintField(vc, 4, videoConfig.marginHeight.toLong()) // height_margin
+                    ProtoEncoder.writeVarintField(vc, 5, videoConfig.density.toLong())      // density
                 }
             }
         }
 
-        // === Service 4: MediaSourceService for MIC (field 5 in Service proto) ===
+        // === Service 6: MediaSinkService for SYSTEM audio (always included) ===
+        // TaaDa order: 1,2,3,6,[7,5],4,9
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-            ProtoEncoder.writeVarintField(svc, 1, 4) // service id = 4
-            // MediaSourceService = Service field 5
-            ProtoEncoder.writeEmbeddedMessage(svc, 5) { mic ->
-                ProtoEncoder.writeVarintField(mic, 1, 1) // available_type = AUDIO_PCM (1)
-                // audio_config = field 2
-                ProtoEncoder.writeEmbeddedMessage(mic, 2) { ac ->
-                    ProtoEncoder.writeVarintField(ac, 1, 16000) // sample_rate
-                    ProtoEncoder.writeVarintField(ac, 2, 16)    // bit_depth
-                    ProtoEncoder.writeVarintField(ac, 3, 1)     // channels (mono)
+            ProtoEncoder.writeVarintField(svc, 1, 6)
+            ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
+                ProtoEncoder.writeVarintField(sink, 1, 1) // AUDIO_PCM
+                ProtoEncoder.writeVarintField(sink, 2, 2) // audio_type = SYSTEM
+                ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
+                    ProtoEncoder.writeVarintField(ac, 1, systemAudio.sampleRate.toLong())
+                    ProtoEncoder.writeVarintField(ac, 2, systemAudio.bitDepth.toLong())
+                    ProtoEncoder.writeVarintField(ac, 3, systemAudio.channelCount.toLong())
                 }
             }
         }
 
         if (includeAudioSinks) {
-            // === Service 5: MediaSinkService for MEDIA audio (field 3 in Service) ===
+            // === Service 7: MediaSinkService for GUIDANCE (optional) ===
+            ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
+                ProtoEncoder.writeVarintField(svc, 1, 7)
+                ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
+                    ProtoEncoder.writeVarintField(sink, 1, 1)
+                    ProtoEncoder.writeVarintField(sink, 2, 1) // GUIDANCE
+                    ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
+                        ProtoEncoder.writeVarintField(ac, 1, speechAudio.sampleRate.toLong())
+                        ProtoEncoder.writeVarintField(ac, 2, speechAudio.bitDepth.toLong())
+                        ProtoEncoder.writeVarintField(ac, 3, speechAudio.channelCount.toLong())
+                    }
+                }
+            }
+
+            // === Service 5: MediaSinkService for MEDIA audio (optional) ===
             ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
                 ProtoEncoder.writeVarintField(svc, 1, 5)
                 ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
-                    ProtoEncoder.writeVarintField(sink, 1, 1) // AUDIO_PCM
-                    ProtoEncoder.writeVarintField(sink, 2, 3) // audio_type = MEDIA
-                    // audio_configs = field 3
+                    ProtoEncoder.writeVarintField(sink, 1, 1)
+                    ProtoEncoder.writeVarintField(sink, 2, 3) // MEDIA
                     ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
                         ProtoEncoder.writeVarintField(ac, 1, mediaAudio.sampleRate.toLong())
                         ProtoEncoder.writeVarintField(ac, 2, mediaAudio.bitDepth.toLong())
@@ -161,32 +174,18 @@ object ServiceDiscovery {
                     }
                 }
             }
+        }
 
-            // === Service 6: MediaSinkService for SYSTEM audio ===
-            ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-                ProtoEncoder.writeVarintField(svc, 1, 6)
-                ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
-                    ProtoEncoder.writeVarintField(sink, 1, 1)
-                    ProtoEncoder.writeVarintField(sink, 2, 2) // audio_type = SYSTEM
-                    ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
-                        ProtoEncoder.writeVarintField(ac, 1, systemAudio.sampleRate.toLong())
-                        ProtoEncoder.writeVarintField(ac, 2, systemAudio.bitDepth.toLong())
-                        ProtoEncoder.writeVarintField(ac, 3, systemAudio.channelCount.toLong())
-                    }
-                }
-            }
-
-            // === Service 7: MediaSinkService for GUIDANCE/SPEECH ===
-            ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
-                ProtoEncoder.writeVarintField(svc, 1, 7)
-                ProtoEncoder.writeEmbeddedMessage(svc, 3) { sink ->
-                    ProtoEncoder.writeVarintField(sink, 1, 1)
-                    ProtoEncoder.writeVarintField(sink, 2, 1) // audio_type = GUIDANCE
-                    ProtoEncoder.writeEmbeddedMessage(sink, 3) { ac ->
-                        ProtoEncoder.writeVarintField(ac, 1, speechAudio.sampleRate.toLong())
-                        ProtoEncoder.writeVarintField(ac, 2, speechAudio.bitDepth.toLong())
-                        ProtoEncoder.writeVarintField(ac, 3, speechAudio.channelCount.toLong())
-                    }
+        // === Service 4: MediaSourceService for MIC (field 5 in Service proto) ===
+        ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
+            ProtoEncoder.writeVarintField(svc, 1, 4) // service id = 4
+            ProtoEncoder.writeEmbeddedMessage(svc, 5) { mic ->
+                ProtoEncoder.writeVarintField(mic, 1, 1) // available_type = AUDIO_PCM
+                // audio_config = field 2 (singular in MediaSourceService)
+                ProtoEncoder.writeEmbeddedMessage(mic, 2) { ac ->
+                    ProtoEncoder.writeVarintField(ac, 1, 16000) // sampling_rate
+                    ProtoEncoder.writeVarintField(ac, 2, 16)    // number_of_bits
+                    ProtoEncoder.writeVarintField(ac, 3, 1)     // number_of_channels
                 }
             }
         }
