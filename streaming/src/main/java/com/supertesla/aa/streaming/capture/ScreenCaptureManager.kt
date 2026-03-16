@@ -31,6 +31,7 @@ class ScreenCaptureManager(
     private var virtualDisplay: VirtualDisplay? = null
     private var encoder: MediaCodec? = null
     private var encoderSurface: Surface? = null
+    @Volatile
     private var running = false
     private var encoderThread: HandlerThread? = null
 
@@ -85,8 +86,8 @@ class ScreenCaptureManager(
         try {
             setupEncoder()
             setupVirtualDisplay()
+            running = true  // Set BEFORE starting encoder thread to avoid race
             startEncoderOutput()
-            running = true
             Log.i(TAG, "Screen capture STARTED: ${width}x${height}@${fps}fps")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start capture: ${e.message}", e)

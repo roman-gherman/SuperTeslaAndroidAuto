@@ -18,6 +18,8 @@ import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.network.dns.MdnsServiceRegistrar
 import com.supertesla.aa.network.hotspot.HotspotManager
 import com.supertesla.aa.network.vpn.VpnTunnelService
+import com.supertesla.aa.network.webrtc.SignalingHandler
+import com.supertesla.aa.network.webrtc.WebRtcManager
 import com.supertesla.aa.network.webserver.VideoStreamHandler
 import com.supertesla.aa.network.webserver.WebServer
 import com.supertesla.aa.network.websocket.TouchInputRelay
@@ -119,6 +121,16 @@ class MainService : Service() {
                 val server = WebServer(assets, AppConfig.SERVER_PORT)
                 server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
                 server.touchInputRelay = touchRelay
+
+                // Wire WebRTC signaling (lazy init — no native libs loaded until first offer)
+                try {
+                    val webRtcManager = WebRtcManager(this@MainService)
+                    webRtcManager.setTouchRelay(touchRelay)
+                    server.signalingHandler = SignalingHandler(webRtcManager)
+                } catch (e: Exception) {
+                    Timber.w(e, "WebRTC setup skipped (not available)")
+                }
+
                 webServer = server
                 server.start()
 
@@ -146,8 +158,9 @@ class MainService : Service() {
 
                 // Wire screen capture video to web server if already capturing
                 screenCapture?.let { capture ->
+                    // Always wire the flow — SharedFlow will just suspend until frames arrive
+                    server.videoFlow = capture.videoFrames
                     if (capture.isCapturing) {
-                        webServer?.videoFlow = capture.videoFrames
                         appStateManager.transition(AppState.Streaming)
                         updateNotification("Streaming - $serverUrl")
                     }
