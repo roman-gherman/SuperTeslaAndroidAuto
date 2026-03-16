@@ -29,6 +29,12 @@ class VideoChannelHandler(
     )
     val videoFrames: SharedFlow<VideoFrame> = _videoFrames
 
+    // Cache codec config (SPS+PPS) and first IDR for late subscribers
+    @Volatile var cachedCodecConfig: ByteArray? = null
+        private set
+    @Volatile var cachedIdr: ByteArray? = null
+        private set
+
     private val frameCount = AtomicLong(0)
     private val byteCount = AtomicLong(0)
     private var lastFpsLogTime = System.currentTimeMillis()
@@ -96,15 +102,55 @@ class VideoChannelHandler(
                 // Acknowledgment from phone - no action needed
             }
 
+            AvMessageType.SETUP_RESPONSE -> {
+                Timber.i("Video: received SetupResponse")
+            }
+
             else -> {
                 Timber.v("Video: unhandled msgType=0x${msgType.toString(16)}")
             }
         }
     }
 
+    /**
+     * Request a keyframe (IDR + SPS/PPS) from Android Auto by sending VIDEO_FOCUS_INDICATION.
+     * TaaDa sends this with focus=PROJECTED, unsolicited=true.
+     */
+    fun requestKeyframe() {
+        Timber.i("Video: requesting keyframe via VIDEO_FOCUS_REQUEST (0x8007)")
+        val payload = ServiceDiscovery.buildVideoFocusIndication(mode = 1, unsolicited = true)
+        mux.sendEncrypted(ChannelId.VIDEO, AvMessageType.VIDEO_FOCUS_REQUEST, payload)
+    }
+
     private suspend fun emitVideo(data: ByteArray, timestamp: Long) {
         val num = frameCount.incrementAndGet()
         byteCount.addAndGet(data.size.toLong())
+
+        // Debug: log NAL types found in the data
+        if (num <= 10 || num % 100 == 0L) {
+            // Find all NAL start codes and their types
+            val nalTypes = mutableListOf<Int>()
+            for (i in 0 until data.size - 4) {
+                if (data[i] == 0.toByte() && data[i+1] == 0.toByte() &&
+                    data[i+2] == 0.toByte() && data[i+3] == 1.toByte()) {
+                    nalTypes.add(data[i+4].toInt() and 0x1F)
+                }
+            }
+            val hex = data.take(20).joinToString(" ") { "%02x".format(it) }
+            Timber.i("Video#$num: NALs=$nalTypes, ${data.size}b, first20=[$hex]")
+        }
+
+        // Cache SPS+PPS (codec config) and IDR for late subscribers
+        if (data.size >= 5 && data[0] == 0.toByte() && data[1] == 0.toByte() &&
+            data[2] == 0.toByte() && data[3] == 1.toByte()) {
+            val nalType = data[4].toInt() and 0x1F
+            if (nalType == 7) { // SPS (often SPS+PPS combined)
+                cachedCodecConfig = data.copyOf()
+                Timber.i("Video: cached codec config (SPS+PPS), ${data.size}b")
+            } else if (nalType == 5) { // IDR
+                cachedIdr = data.copyOf()
+            }
+        }
 
         _videoFrames.emit(VideoFrame(data, timestamp, num))
 

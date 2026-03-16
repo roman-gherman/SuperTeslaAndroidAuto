@@ -296,8 +296,27 @@ class TransporterService : Service() {
 
                     // Wire AA video to Ktor web server's video flow (map VideoFrame → ByteArray)
                     emu.videoHandler?.let { handler ->
-                        server.videoFlow = handler.videoFrames.map { it.data }
+                        // Create a flow that prepends cached codec config + IDR for late subscribers
+                        server.videoFlow = kotlinx.coroutines.flow.flow {
+                            // Emit cached SPS+PPS and IDR first (if available)
+                            handler.cachedCodecConfig?.let {
+                                Timber.i("Emitting cached codec config to new subscriber: ${it.size}b")
+                                emit(it)
+                            }
+                            handler.cachedIdr?.let {
+                                Timber.i("Emitting cached IDR to new subscriber: ${it.size}b")
+                                emit(it)
+                            }
+                            // Then stream live frames
+                            handler.videoFrames.collect { emit(it.data) }
+                        }
                         Timber.i("Video flow wired to Ktor web server")
+
+                        // Request a keyframe when a new browser client connects
+                        server.onClientConnected = {
+                            Timber.i("Browser client connected, requesting keyframe")
+                            handler.requestKeyframe()
+                        }
                     }
 
                     // Collect video frames from AA and relay to browser

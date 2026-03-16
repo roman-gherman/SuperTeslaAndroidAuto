@@ -51,11 +51,34 @@ class FragmentedMp4Muxer(
         // Calculate total data size
         val totalDataSize = frames.sumOf { it.avccData.size }
 
-        // moof
+        // Build moof content first to know its size for data_offset fixup
         val moofContent = ByteArrayOutputStream()
         writeMfhd(moofContent, seq)
         writeTraf(moofContent, frames, totalDataSize)
-        writeBox(out, "moof", moofContent.toByteArray())
+        val moofContentBytes = moofContent.toByteArray()
+        val moofBoxSize = 8 + moofContentBytes.size // 8 = box header (size + type)
+
+        // data_offset = bytes from moof start to mdat payload start
+        // = moof_box_size + 8 (mdat box header)
+        val dataOffset = moofBoxSize + 8
+
+        // Fix up the data_offset in the trun box.
+        // trun data_offset is at a known position within moofContent:
+        //   mfhd box = 8 + 8 = 16 bytes
+        //   traf box header = 8 bytes
+        //   tfhd box = 8 + 8 = 16 bytes
+        //   tfdt box = 8 + 12 = 20 bytes
+        //   trun box header = 8 bytes
+        //   trun version+flags = 4 bytes
+        //   trun sample_count = 4 bytes
+        //   -> data_offset is at offset: 16 + 8 + 16 + 20 + 8 + 4 + 4 = 76
+        val dataOffsetPos = 76
+        moofContentBytes[dataOffsetPos] = ((dataOffset shr 24) and 0xFF).toByte()
+        moofContentBytes[dataOffsetPos + 1] = ((dataOffset shr 16) and 0xFF).toByte()
+        moofContentBytes[dataOffsetPos + 2] = ((dataOffset shr 8) and 0xFF).toByte()
+        moofContentBytes[dataOffsetPos + 3] = (dataOffset and 0xFF).toByte()
+
+        writeBox(out, "moof", moofContentBytes)
 
         // mdat
         val mdatContent = ByteArrayOutputStream(totalDataSize)
@@ -329,26 +352,14 @@ class FragmentedMp4Muxer(
 
     private fun writeTrun(out: ByteArrayOutputStream, frames: List<VideoFrame>, totalDataSize: Int) {
         val content = ByteArrayOutputStream()
-        // flags: data-offset-present(1) | first-sample-flags-present(4) |
-        //        sample-duration-present(0x100) | sample-size-present(0x200) |
-        //        sample-composition-time-offsets-present(0x800)
-        val flags = 0x000301  // data-offset + sample-duration + sample-size + first-sample-flags
+        // flags: data-offset-present(0x1) | first-sample-flags-present(0x4) |
+        //        sample-duration-present(0x100) | sample-size-present(0x200)
+        val flags = 0x000305  // data-offset + first-sample-flags + sample-duration + sample-size
         content.writeUInt32(flags)               // version=0, flags
         content.writeUInt32(frames.size)         // sample_count
 
-        // data_offset: distance from moof start to mdat content start
-        // We'll calculate this as: 8 (moof header placeholder) + moof content + 8 (mdat header)
-        // The caller handles actual offset, we just need trun's own placeholder
-        // For simplicity, use 0 and fix up... actually, with default-base-is-moof,
-        // data_offset = size_of_moof_box + 8 (mdat header)
-        // We don't know moof size yet, so we'll write 0 and the browser handles it
-        // Actually, proper calculation is needed. Let's compute:
-        // moof_box_size = header(8) + mfhd_box + traf_box
-        // traf_box = header(8) + tfhd_box + tfdt_box + trun_box
-        // trun_box size = 8 + 12 + 4*frames_with_first_flags + (8 or 12)*remaining
-        // This is complex; use a two-pass approach in createMediaSegment instead.
-        // For now, write a placeholder.
-        content.writeUInt32(0)                   // data_offset (placeholder, fixed up later)
+        // data_offset: placeholder, fixed up in createMediaSegment() after moof size is known
+        content.writeUInt32(0)                   // data_offset (patched by createMediaSegment)
 
         // first sample flags (keyframe vs non-keyframe)
         if (frames.isNotEmpty() && frames[0].isKeyframe) {
