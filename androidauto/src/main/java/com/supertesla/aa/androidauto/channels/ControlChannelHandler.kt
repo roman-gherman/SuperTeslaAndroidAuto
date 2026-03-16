@@ -40,8 +40,9 @@ class ControlChannelHandler(
                 } catch (e: Exception) {
                     Timber.d("CTRL: SDReq parse error: ${e.message}")
                 }
-                // Log our response hex for debugging
-                Timber.d("CTRL: Our SDResp (${serviceDiscoveryPayload.size}b): ${serviceDiscoveryPayload.take(64).joinToString("") { "%02x".format(it) }}...")
+                // Log full response hex for debugging
+                val hex = serviceDiscoveryPayload.joinToString("") { "%02x".format(it) }
+                Timber.i("CTRL: SDResp (${serviceDiscoveryPayload.size}b) hex=$hex")
                 mux.sendEncrypted(ChannelId.CONTROL, MessageType.SERVICE_DISCOVERY_RESPONSE, serviceDiscoveryPayload)
                 Timber.i("CTRL: Sent ServiceDiscoveryResponse (${serviceDiscoveryPayload.size} bytes)")
             }
@@ -69,18 +70,22 @@ class ControlChannelHandler(
             }
 
             MessageType.AUDIO_FOCUS_REQUEST -> {
-                // Parse the request to see what audio focus is being requested
+                // Parse the request
+                var requestType = 0
                 try {
                     val fields = ProtoEncoder.readFields(body)
-                    Timber.i("CTRL: AudioFocusRequest: ${fields.map { "f${it.fieldNumber}=${it.varintValue}" }}")
+                    requestType = fields.firstOrNull { it.fieldNumber == 1 }?.intValue ?: 0
+                    Timber.i("CTRL: AudioFocusRequest: requestType=$requestType fields=${fields.map { "f${it.fieldNumber}=${it.varintValue}" }}")
                 } catch (_: Exception) {}
 
-                // Respond with AudioFocusNotification: focus_state=GAIN(1), unsolicited=false
+                // Respond with AudioFocusNotification matching the request
+                // If AA requests focus (1=GAIN), respond with GAIN
+                // If AA notifies loss (4=LOSS_TRANSIENT_CAN_DUCK), acknowledge with same
                 val out = java.io.ByteArrayOutputStream()
-                ProtoEncoder.writeVarintField(out, 1, 1) // focus_state = GAIN
+                ProtoEncoder.writeVarintField(out, 1, requestType.toLong()) // mirror the focus state
                 ProtoEncoder.writeVarintField(out, 2, 0) // unsolicited = false
                 mux.sendEncrypted(ChannelId.CONTROL, MessageType.AUDIO_FOCUS_RESPONSE, out.toByteArray())
-                Timber.i("CTRL: Sent AudioFocusResponse (GAIN)")
+                Timber.i("CTRL: Sent AudioFocusResponse (state=$requestType)")
             }
 
             MessageType.NAVIGATION_FOCUS_REQUEST -> {

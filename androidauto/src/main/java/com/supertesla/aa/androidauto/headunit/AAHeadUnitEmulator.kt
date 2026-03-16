@@ -342,7 +342,8 @@ class AAHeadUnitEmulator(
                 sampleRate = config.audioSampleRate,
                 bitDepth = config.audioBitDepth,
                 channelCount = config.audioChannels
-            )
+            ),
+            includeAudioSinks = false  // Match TaaDa default (useBT=true skips 5,7)
         )
 
         // Control channel
