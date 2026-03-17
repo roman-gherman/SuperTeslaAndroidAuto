@@ -436,7 +436,7 @@
         var w = screen.width || 1920;
         var h = screen.height || 1080;
         var wc = typeof VideoDecoder === 'function';
-        fetch('http://' + serverHost + '/config?w=' + w + '&h=' + h + '&webcodec=' + wc)
+        fetch('/config?w=' + w + '&h=' + h + '&webcodec=' + wc)
             .then(function(r) { return r.json(); })
             .then(function(cfg) {
                 console.log('Config:', cfg);
@@ -455,21 +455,19 @@
     }
 
     // ---- Server host discovery ----
-    // Priority: ?ip= URL param > same host (if served from phone) > gateway probe
+    // Priority: ?ip= URL param > same host as page (phone is serving)
     function getServerHost() {
         // 1. Explicit IP from URL param: ?ip=192.168.43.1
         var params = new URLSearchParams(location.search);
         if (params.get('ip')) return params.get('ip') + ':8080';
 
-        // 2. If page is served from the phone itself (not external CDN)
-        if (location.hostname && !location.hostname.includes('github.io') &&
-            !location.hostname.includes('duckdns.org') &&
-            !location.hostname.includes('taada') &&
-            !location.hostname.includes('localhost')) {
-            return location.host; // phone is serving this page
-        }
+        // 2. Use the same host that served this page.
+        //    Works for both phone-served (http://192.168.x.x:8080)
+        //    and DuckDNS (http://supertesla.duckdns.org:8080) since
+        //    DuckDNS resolves to the phone's IP.
+        if (location.host) return location.host;
 
-        // 3. Common Android hotspot gateway IPs (try the default)
+        // 3. Fallback: common Android hotspot gateway
         return '192.168.43.1:8080';
     }
 
