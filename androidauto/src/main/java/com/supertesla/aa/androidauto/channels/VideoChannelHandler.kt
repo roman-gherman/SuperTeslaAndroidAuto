@@ -72,9 +72,9 @@ class VideoChannelHandler(
             }
 
             AvMessageType.MEDIA_INDICATION -> {
+                // Codec config (SPS/PPS) — do NOT send ACK for this (TaaDa doesn't)
                 if (body.isEmpty()) return
                 emitVideo(body, System.nanoTime())
-                sendAck() // Server-side ACK
             }
 
             AvMessageType.SETUP_REQUEST -> {

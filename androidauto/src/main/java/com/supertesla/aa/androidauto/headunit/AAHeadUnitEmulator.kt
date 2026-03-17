@@ -239,7 +239,10 @@ class AAHeadUnitEmulator(
             Timber.w("HANDSHAKE: PHONE_HELLO payload len suspicious: $payloadLen")
         }
 
-        Timber.i("HANDSHAKE: Car handshake complete (CLEARTEXT will be sent after TLS)")
+        // NOTE: TaaDa sends AUTH_COMPLETE before TLS, but on Android 16 / AA v16.3
+        // this causes an immediate "Connection reset". Our working flow sends
+        // AUTH_COMPLETE only AFTER TLS completes. Do NOT add pre-TLS AUTH_COMPLETE.
+        Timber.i("HANDSHAKE: Car handshake complete (AUTH_COMPLETE will be sent after TLS)")
     }
 
     /**

@@ -201,9 +201,14 @@ object ServiceDiscovery {
 
     fun buildMediaSetupResponse(configIndex: Int = 0, maxUnacked: Int = 1): ByteArray {
         val out = ByteArrayOutputStream()
-        ProtoEncoder.writeVarintField(out, 1, 2) // status = STATUS_READY (TaaDa's Config.Status.STATUS_READY)
-        ProtoEncoder.writeVarintField(out, 2, maxUnacked.toLong())
-        ProtoEncoder.writeVarintField(out, 3, configIndex.toLong())
+        // status field 1: Config.Status enum.
+        // TaaDa sends STATUS_READY = 2. AA requires this value to proceed
+        // to START_INDICATION. Without status=2, AA never sends START_INDICATION
+        // and video never starts. Tested: status=0 → no START_INDICATION,
+        // status=2 → AA sends START_INDICATION and video frames flow.
+        ProtoEncoder.writeVarintField(out, 1, 2) // STATUS_READY = 2
+        ProtoEncoder.writeVarintField(out, 2, maxUnacked.toLong()) // max_unacked = 1
+        ProtoEncoder.writeVarintField(out, 3, configIndex.toLong()) // configuration_indices
         return out.toByteArray()
     }
 

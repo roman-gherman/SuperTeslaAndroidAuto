@@ -8,12 +8,14 @@ class ServiceDiscoveryTest {
     // ========== buildMediaSetupResponse ==========
 
     @Test
-    fun `buildMediaSetupResponse field 1 status should be 0 (STATUS_OK)`() {
-        // CRITICAL BUG: current code writes 2 instead of 0
+    fun `buildMediaSetupResponse field 1 status is 2 (STATUS_READY)`() {
+        // AA requires STATUS_READY (2) to proceed to START_INDICATION.
+        // Tested: status=0 → AA never sends START_INDICATION, no video.
+        // TaaDa's Config.Status.STATUS_READY = 2.
         val data = ServiceDiscovery.buildMediaSetupResponse(configIndex = 0, maxUnacked = 1)
         val fields = ProtoEncoder.readFields(data)
         val statusField = fields.first { it.fieldNumber == 1 }
-        assertEquals(0L, statusField.varintValue, "Field 1 should be STATUS_OK (0), not 2")
+        assertEquals(2L, statusField.varintValue, "Field 1 should be STATUS_READY (2)")
     }
 
     @Test
