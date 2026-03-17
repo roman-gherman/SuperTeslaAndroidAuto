@@ -156,4 +156,15 @@
     document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
     document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
     document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+    // Expose for player.js config update
+    window.SuperTeslaTouch = window.SuperTeslaTouch || {};
+    Object.defineProperty(window.SuperTeslaTouch, 'DISPLAY_W', {
+        get: function() { return DISPLAY_W; },
+        set: function(v) { DISPLAY_W = v; console.log('Touch: DISPLAY_W updated to', v); }
+    });
+    Object.defineProperty(window.SuperTeslaTouch, 'DISPLAY_H', {
+        get: function() { return DISPLAY_H; },
+        set: function(v) { DISPLAY_H = v; console.log('Touch: DISPLAY_H updated to', v); }
+    });
 })();

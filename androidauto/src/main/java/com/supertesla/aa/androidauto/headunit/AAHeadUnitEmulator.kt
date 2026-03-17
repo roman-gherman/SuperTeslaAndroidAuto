@@ -3,6 +3,8 @@ package com.supertesla.aa.androidauto.headunit
 import com.supertesla.aa.androidauto.channels.AudioChannelHandler
 import com.supertesla.aa.androidauto.channels.ControlChannelHandler
 import com.supertesla.aa.androidauto.channels.InputChannelHandler
+import com.supertesla.aa.androidauto.channels.MicChannelHandler
+import com.supertesla.aa.androidauto.channels.PlaybackStatusHandler
 import com.supertesla.aa.androidauto.channels.SensorChannelHandler
 import com.supertesla.aa.androidauto.channels.VideoChannelHandler
 import com.supertesla.aa.androidauto.proto.AvMessageType
@@ -406,6 +408,14 @@ class AAHeadUnitEmulator(
 
         audioMediaHandler = AudioChannelHandler(ChannelId.AUDIO_MEDIA, "Media", channelMux)
         channelMux.registerHandler(ChannelId.AUDIO_MEDIA, audioMediaHandler!!)
+
+        // Mic channel (4) — stub that responds to MicRequest so AA doesn't hang
+        val micHandler = MicChannelHandler(channelMux)
+        channelMux.registerHandler(ChannelId.MIC, micHandler)
+
+        // Playback status channel (9) — accepts metadata silently
+        val playbackHandler = PlaybackStatusHandler(channelMux)
+        channelMux.registerHandler(ChannelId.PLAYBACK_STATUS, playbackHandler)
     }
 
     /**

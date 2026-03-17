@@ -431,6 +431,29 @@
         }
     }
 
+    // ---- Fetch config from server (TaaDa-compatible /config endpoint) ----
+    function fetchConfig() {
+        var w = screen.width || 1920;
+        var h = screen.height || 1080;
+        var wc = typeof VideoDecoder === 'function';
+        fetch('/config?w=' + w + '&h=' + h + '&webcodec=' + wc)
+            .then(function(r) { return r.json(); })
+            .then(function(cfg) {
+                console.log('Config:', cfg);
+                if (cfg.width && cfg.height) {
+                    if (window.SuperTeslaTouch) {
+                        window.SuperTeslaTouch.DISPLAY_W = cfg.width;
+                        window.SuperTeslaTouch.DISPLAY_H = cfg.height;
+                    }
+                    if (canvasEl) {
+                        canvasEl.width = cfg.width;
+                        canvasEl.height = cfg.height;
+                    }
+                }
+            })
+            .catch(function(e) { console.warn('Config fetch failed:', e); });
+    }
+
     // ---- WebSocket connection ----
     function connect() {
         var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -521,6 +544,7 @@
     document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 
     // ---- Start ----
+    fetchConfig();
     if (useWebCodecs) {
         canvasEl.style.display = 'block';
     } else {

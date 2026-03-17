@@ -537,14 +537,14 @@ class TransporterService : Service() {
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "SuperTesla::TransporterWakeLock"
-        ).apply { acquire() }
+        ).apply { acquire(WAKE_LOCK_TIMEOUT_MS) }
 
         val wm = getSystemService(Context.WIFI_SERVICE) as WifiManager
         @Suppress("DEPRECATION")
         wifiLock = wm.createWifiLock(
             WifiManager.WIFI_MODE_FULL_HIGH_PERF,
             "SuperTesla::TransporterWifiLock"
-        ).apply { acquire() }
+        ).apply { acquire() } // WiFi lock has no timeout API
 
         Timber.d("Wake and WiFi locks acquired")
     }
