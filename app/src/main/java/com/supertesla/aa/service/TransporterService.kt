@@ -53,6 +53,9 @@ class TransporterService : Service() {
 
         const val EXTRA_TRIGGER_SOURCE = "trigger_source"
 
+        /** Wake lock timeout: 4 hours in milliseconds */
+        const val WAKE_LOCK_TIMEOUT_MS = 4L * 60 * 60 * 1000
+
         private const val NOTIFICATION_CHANNEL_ID = "supertesla_transporter"
         private const val NOTIFICATION_ID = 1002
 

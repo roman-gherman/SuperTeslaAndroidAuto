@@ -21,6 +21,10 @@ android {
         jvmTarget = "17"
     }
 
+    testOptions {
+        unitTests.all { it.useJUnitPlatform() }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -52,4 +56,13 @@ dependencies {
 
     // WebSocket Server (for TaaDa-style 3-port relay)
     api(libs.java.websocket)
+
+    testImplementation(libs.junit5.api)
+    testRuntimeOnly(libs.junit5.engine)
+    testImplementation(libs.junit5.params)
+    testImplementation(libs.mockk)
+    testImplementation(libs.turbine)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.ktor.server.test)
+    testImplementation(libs.kotlinx.serialization.json)
 }

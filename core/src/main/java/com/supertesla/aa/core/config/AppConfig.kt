@@ -3,7 +3,6 @@ package com.supertesla.aa.core.config
 object AppConfig {
     const val DEFAULT_VIRTUAL_IP = "240.3.3.3"
     const val SERVER_PORT = 8080
-    const val SERVER_PORT_HTTP = 80
 
     /**
      * Public domain that resolves to DEFAULT_VIRTUAL_IP via DNS A record.

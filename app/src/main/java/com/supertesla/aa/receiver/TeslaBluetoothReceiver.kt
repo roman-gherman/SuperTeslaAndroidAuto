@@ -11,7 +11,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.supertesla.aa.MainActivity
-import com.supertesla.aa.service.MainService
 import com.supertesla.aa.service.TransporterService
 import timber.log.Timber
 
