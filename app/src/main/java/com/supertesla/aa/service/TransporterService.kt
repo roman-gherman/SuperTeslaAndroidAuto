@@ -105,6 +105,7 @@ class TransporterService : Service() {
     private var hotspotManager: HotspotManager? = null
     private var dnsServer: com.supertesla.aa.network.dns.LocalDnsServer? = null
     private var keepaliveWatchdog: com.supertesla.aa.streaming.video.KeepaliveWatchdog? = null
+    private val reconnectPolicy = com.supertesla.aa.core.util.ReconnectPolicy()
 
     // WebSocket servers (3-port architecture like TaaDa)
     private var controlServer: ControlSocketServer? = null
@@ -293,6 +294,7 @@ class TransporterService : Service() {
                             updateNotification("Connected to Android Auto")
                         is AAHeadUnitEmulator.State.Streaming -> {
                             isConnected = true
+                            reconnectPolicy.reset()
                             updateNotification("Streaming")
                         }
                         is AAHeadUnitEmulator.State.Error -> {
@@ -327,13 +329,13 @@ class TransporterService : Service() {
                 //      a. Spin up per-session coroutines for heartbeat + media flows.
                 //      b. Call listenAndConnect() — suspends until the read loop exits.
                 //      c. Cancel per-session coroutines, wait RECONNECT_DELAY_MS, retry.
-                var reconnectAttempt = 0
-                while (isActive) {
-                    reconnectAttempt++
-                    if (reconnectAttempt > 1) {
-                        Timber.i("RECONNECT: Attempt #$reconnectAttempt — waiting ${RECONNECT_DELAY_MS}ms")
-                        updateNotification("Reconnecting (attempt $reconnectAttempt)...")
-                        delay(RECONNECT_DELAY_MS)
+                reconnectPolicy.reset()
+                while (isActive && !reconnectPolicy.isExhausted) {
+                    reconnectPolicy.recordAttempt()
+                    if (reconnectPolicy.attempts > 1) {
+                        Timber.i("RECONNECT: Attempt #${reconnectPolicy.attempts}/${reconnectPolicy.maxAttempts} — waiting ${reconnectPolicy.delayMs}ms")
+                        updateNotification("Reconnecting (${reconnectPolicy.attempts}/${reconnectPolicy.maxAttempts})...")
+                        delay(reconnectPolicy.delayMs)
                         if (!isActive) break
 
                         // Re-launch AA so the phone re-initiates the TCP connection.
@@ -400,7 +402,7 @@ class TransporterService : Service() {
                     }
 
                     // Block until the AA session ends (EOF / IOException / explicit cancel).
-                    Timber.i("RECONNECT: Calling listenAndConnect() (attempt #$reconnectAttempt)")
+                    Timber.i("RECONNECT: Calling listenAndConnect() (attempt #${reconnectPolicy.attempts})")
                     try {
                         emu.listenAndConnect()
                         Timber.i("RECONNECT: listenAndConnect() returned — session ended")
@@ -420,9 +422,27 @@ class TransporterService : Service() {
                         break
                     }
 
-                    Timber.i("RECONNECT: Session ended, will retry in ${RECONNECT_DELAY_MS}ms")
+                    Timber.i("RECONNECT: Session ended, will retry in ${reconnectPolicy.delayMs}ms")
                 }
 
+                // Exhausted all reconnect attempts
+                if (reconnectPolicy.isExhausted && isActive) {
+                    Timber.e("RECONNECT: Exhausted ${reconnectPolicy.maxAttempts} attempts — stopping")
+                    statusText.value = "Connection failed after ${reconnectPolicy.maxAttempts} attempts"
+                    updateNotification("Connection failed")
+                }
+
+            } catch (e: OutOfMemoryError) {
+                Timber.e("OOM in TransporterService pipeline! Scheduling restart...")
+                Companion.isActive = false
+                Companion.isConnected = false
+                Companion.isVideoActive = false
+                statusText.value = "Out of memory — restarting..."
+                // Schedule restart after 3 seconds
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try { start(this@TransporterService) } catch (_: Exception) {}
+                }, 3000)
+                stopSelf()
             } catch (e: Exception) {
                 Timber.e(e, "TransporterService pipeline failed")
                 updateNotification("Error: ${e.message}")
@@ -589,6 +609,17 @@ class TransporterService : Service() {
                 try { ws.stop() } catch (_: Exception) {}
             }.start()
         }
+
+        // Notify WebSocket clients of shutdown (TaaDa sends server_shutdown JSON)
+        try {
+            val ctrl = controlServer
+            if (ctrl != null) {
+                val notifier = com.supertesla.aa.core.util.ShutdownNotifier(
+                    broadcast = { msg -> ctrl.broadcast(msg) }
+                )
+                kotlinx.coroutines.runBlocking { notifier.notifyAndDrain() }
+            }
+        } catch (_: Exception) {}
 
         // Stop WebSocket servers
         try { stopWebSocketServers() } catch (_: Exception) {}
