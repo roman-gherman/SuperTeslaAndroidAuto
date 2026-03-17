@@ -273,8 +273,8 @@ class TransporterService : Service() {
                 // 3. Start 3 WebSocket servers
                 // Create keepalive watchdog (3s timeout, disables video focus on browser disconnect)
                 keepaliveWatchdog = com.supertesla.aa.streaming.video.KeepaliveWatchdog(
-                    scope = this@launch,
-                    timeoutMs = 3000L,
+                    scope = serviceScope,
+                    timeoutMs = 5000L, // 5s timeout (browser PINGs every 2s)
                     onTimeout = {
                         Timber.w("Browser keepalive timeout — disabling video focus")
                         nalStreamManager?.toggleVideoFocus(false)
@@ -291,65 +291,21 @@ class TransporterService : Service() {
                     Timber.e(e, "PIPELINE: WebSocket servers FAILED")
                 }
 
-                // 4. Start Ktor web server (serves HTML player + /ws for testing)
-                Timber.i("PIPELINE: Step 4 — Starting Ktor web server on port ${AppConfig.SERVER_PORT}")
-                updateNotification("Starting web server...")
+                // 4. Create core components FIRST (before any server starts accepting connections)
+                Timber.i("PIPELINE: Step 4 — Creating NalStreamManager + AA Emulator")
+                updateNotification("Initializing AA protocol...")
                 val videoWidth = config.videoWidth
                 val videoHeight = config.videoHeight
-                val touchRelay = TouchInputRelay(videoWidth, videoHeight)
-                val server = WebServer(assets, AppConfig.SERVER_PORT)
-                server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
-                server.touchInputRelay = touchRelay
-                server.configVideoWidth = videoWidth
-                server.configVideoHeight = videoHeight
-                server.configUseBt = config.useBluetooth
-                // Wire control actions from Ktor WebSocket (same as ControlSocketServer)
-                server.onAction = { action, _ ->
-                    when (action) {
-                        "START" -> {
-                            Timber.i("Ktor WS: START → enabling video focus")
-                            nalStreamManager?.toggleVideoFocus(true)
-                        }
-                        "STOP" -> nalStreamManager?.toggleVideoFocus(false)
-                        "ACK" -> emulator?.videoHandler?.sendAck()
-                        "PING" -> keepaliveWatchdog?.reset()
-                        "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
-                        "RELOAD" -> {
-                            nalStreamManager?.toggleVideoFocus(false)
-                            serviceScope.launch { delay(100); nalStreamManager?.toggleVideoFocus(true) }
-                        }
-                    }
-                }
-                webServer = server
-                try {
-                    server.start()
-                    Timber.i("PIPELINE: Ktor web server started OK on port ${AppConfig.SERVER_PORT}")
-                } catch (e: Exception) {
-                    Timber.e(e, "PIPELINE: Ktor web server FAILED to start")
-                }
 
-                // 5. Create NalStreamManager
                 val nalManager = NalStreamManager()
                 nalStreamManager = nalManager
+                Timber.i("PIPELINE: NalStreamManager created")
 
-                // Web server is now running — accessible at http://<phone-ip>:8080/
-                val serverUrl = AppConfig.getServerUrlFallback()
-                updateNotification("Server ready: $serverUrl")
-                Timber.i("Web server accessible at $serverUrl")
-
-                // 6. Create AA emulator (single instance; reconnects reuse the same object)
-                updateNotification("Waiting for Android Auto...")
                 val emu = AAHeadUnitEmulator(config, this@TransporterService)
                 emulator = emu
+                Timber.i("PIPELINE: AA Emulator created")
 
-                // Wire touch from Ktor WebSocket → AA protocol
-                touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
-                    override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
-                        emu.inputHandler?.sendTouchEvent(action, x, y, pointerId)
-                    }
-                })
-
-                // Wire video focus control
+                // Wire video focus: NalStreamManager → AA Emulator
                 nalManager.onSendVideoFocus = { projected, unsolicited ->
                     emu.sendVideoFocus(projected, unsolicited)
                 }
@@ -385,6 +341,54 @@ class TransporterService : Service() {
                         else -> {}
                     }
                 }
+
+                // 5. Start Ktor web server (AFTER core components are created)
+                Timber.i("PIPELINE: Step 5 — Starting Ktor web server on port ${AppConfig.SERVER_PORT}")
+                updateNotification("Starting web server...")
+                val touchRelay = TouchInputRelay(videoWidth, videoHeight)
+                val server = WebServer(assets, AppConfig.SERVER_PORT)
+                server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
+                server.touchInputRelay = touchRelay
+                server.configVideoWidth = videoWidth
+                server.configVideoHeight = videoHeight
+                server.configUseBt = config.useBluetooth
+                server.onAction = { action, _ ->
+                    when (action) {
+                        "START" -> {
+                            Timber.i("Ktor WS: START → enabling video focus")
+                            keepaliveWatchdog?.start()
+                            nalStreamManager?.toggleVideoFocus(true)
+                        }
+                        "STOP" -> {
+                            keepaliveWatchdog?.cancel()
+                            nalStreamManager?.toggleVideoFocus(false)
+                        }
+                        "ACK" -> emulator?.videoHandler?.sendAck()
+                        "PING" -> keepaliveWatchdog?.reset()
+                        "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
+                        "RELOAD" -> {
+                            nalStreamManager?.toggleVideoFocus(false)
+                            serviceScope.launch { delay(100); nalStreamManager?.toggleVideoFocus(true) }
+                        }
+                    }
+                }
+                // Wire touch → AA protocol
+                touchRelay.setTouchListener(object : TouchInputRelay.TouchListener {
+                    override fun onTouch(action: Int, x: Int, y: Int, pointerId: Int) {
+                        emu.inputHandler?.sendTouchEvent(action, x, y, pointerId)
+                    }
+                })
+                webServer = server
+                try {
+                    server.start()
+                    Timber.i("PIPELINE: Ktor web server started OK")
+                } catch (e: Exception) {
+                    Timber.e(e, "PIPELINE: Ktor web server FAILED to start")
+                }
+
+                val serverUrl = AppConfig.getServerUrlFallback()
+                updateNotification("Server ready: $serverUrl")
+                Timber.i("Web server accessible at $serverUrl")
 
                 // Give the server socket a moment to start, then launch AA once.
                 delay(500)
