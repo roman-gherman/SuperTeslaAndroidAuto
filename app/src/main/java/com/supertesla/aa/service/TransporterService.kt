@@ -448,8 +448,16 @@ class TransporterService : Service() {
                                 Timber.i("SESSION: Video flow wired to Ktor web server")
 
                                 server.onClientConnected = {
-                                    Timber.i("Browser client connected, requesting keyframe")
-                                    handler.requestKeyframe()
+                                    try {
+                                        if (isConnected) {
+                                            Timber.i("Browser client connected, requesting keyframe")
+                                            handler.requestKeyframe()
+                                        } else {
+                                            Timber.d("Browser client connected but AA not yet connected — skipping keyframe")
+                                        }
+                                    } catch (e: Exception) {
+                                        Timber.w(e, "Failed to request keyframe on client connect")
+                                    }
                                 }
                             }
 
