@@ -172,6 +172,18 @@ class TransporterService : Service() {
                 acquireLocks()
                 updateNotification("Acquiring locks...")
 
+                // 1b. Read config from SharedPreferences
+                val settingsPrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                val configMap = mapOf(
+                    "resolution" to (settingsPrefs.getString("resolution", "720p") ?: "720p"),
+                    "dpi" to settingsPrefs.getInt("dpi", 120).toString(),
+                    "rhd" to settingsPrefs.getBoolean("rhd", false).toString(),
+                    "usebt" to settingsPrefs.getBoolean("usebt", true).toString(),
+                    "usevpn" to settingsPrefs.getBoolean("usevpn", true).toString()
+                )
+                val config = HeadUnitConfig.fromMap(configMap)
+                Timber.i("PIPELINE: Config — ${config.videoWidth}x${config.videoHeight} @ ${config.videoDensity}dpi, rhd=${config.rightHandDrive}, bt=${config.useBluetooth}, vpn=${config.useVpn}")
+
                 // 2. Force-kill any lingering AA car process from previous session
                 Timber.i("PIPELINE: Step 2 — Cleaning up old AA sessions")
                 try {
@@ -194,14 +206,18 @@ class TransporterService : Service() {
                 }
 
                 // 2c. Start VPN tunnel (creates 240.3.3.3 interface, excludes AA)
-                Timber.i("PIPELINE: Step 2c — Starting VPN tunnel")
-                updateNotification("Starting VPN...")
-                try {
-                    startVpn()
-                    delay(1000) // Wait for VPN to establish
-                    Timber.i("PIPELINE: VPN started")
-                } catch (e: Exception) {
-                    Timber.w(e, "PIPELINE: VPN failed (non-fatal, continuing)")
+                if (config.useVpn) {
+                    Timber.i("PIPELINE: Step 2c — Starting VPN tunnel")
+                    updateNotification("Starting VPN...")
+                    try {
+                        startVpn()
+                        delay(1000)
+                        Timber.i("PIPELINE: VPN started")
+                    } catch (e: Exception) {
+                        Timber.w(e, "PIPELINE: VPN failed (non-fatal, continuing)")
+                    }
+                } else {
+                    Timber.i("PIPELINE: VPN disabled by config")
                 }
 
                 // 2d. Start local DNS server
@@ -241,12 +257,15 @@ class TransporterService : Service() {
                 // 4. Start Ktor web server (serves HTML player + /ws for testing)
                 Timber.i("PIPELINE: Step 4 — Starting Ktor web server on port ${AppConfig.SERVER_PORT}")
                 updateNotification("Starting web server...")
-                val videoWidth = 1280
-                val videoHeight = 720
+                val videoWidth = config.videoWidth
+                val videoHeight = config.videoHeight
                 val touchRelay = TouchInputRelay(videoWidth, videoHeight)
                 val server = WebServer(assets, AppConfig.SERVER_PORT)
                 server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
                 server.touchInputRelay = touchRelay
+                server.configVideoWidth = videoWidth
+                server.configVideoHeight = videoHeight
+                server.configUseBt = config.useBluetooth
                 webServer = server
                 try {
                     server.start()
@@ -266,7 +285,6 @@ class TransporterService : Service() {
 
                 // 6. Create AA emulator (single instance; reconnects reuse the same object)
                 updateNotification("Waiting for Android Auto...")
-                val config = HeadUnitConfig()
                 val emu = AAHeadUnitEmulator(config, this@TransporterService)
                 emulator = emu
 
