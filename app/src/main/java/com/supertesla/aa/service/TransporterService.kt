@@ -220,6 +220,38 @@ class TransporterService : Service() {
                     Timber.i("PIPELINE: VPN disabled by config")
                 }
 
+                // 2c2. Detect hotspot IP and update DuckDNS
+                try {
+                    val hm = hotspotManager
+                    val gatewayIp = hm?.getGatewayIp()
+                    if (gatewayIp != null) {
+                        AppConfig.detectedHotspotIp = gatewayIp
+                        Timber.i("PIPELINE: Hotspot gateway IP: $gatewayIp")
+
+                        // Update DuckDNS to point to our hotspot IP
+                        val duckDnsToken = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                            .getString("duckdns_token", null)
+                        if (duckDnsToken != null && duckDnsToken.isNotBlank()) {
+                            launch(Dispatchers.IO) {
+                                val ok = com.supertesla.aa.network.dns.DuckDnsUpdater.update(
+                                    domain = AppConfig.DUCKDNS_SUBDOMAIN,
+                                    token = duckDnsToken,
+                                    ip = gatewayIp
+                                )
+                                if (ok) {
+                                    Timber.i("PIPELINE: DuckDNS updated: ${AppConfig.PUBLIC_DOMAIN} -> $gatewayIp")
+                                }
+                            }
+                        } else {
+                            Timber.d("PIPELINE: No DuckDNS token — skipping DNS update")
+                        }
+                    } else {
+                        Timber.w("PIPELINE: Could not detect hotspot gateway IP")
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "PIPELINE: Hotspot IP detection failed")
+                }
+
                 // 2d. Start local DNS server
                 Timber.i("PIPELINE: Step 2d — Starting DNS server")
                 try {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -153,8 +154,21 @@ fun SettingsScreen(onBack: () -> Unit) {
                 useVpn = it
                 saveAndNotifyRestart("usevpn", it)
             }
+
+            // DuckDNS token for automatic domain update
+            var duckDnsToken by remember { mutableStateOf(prefs.getString("duckdns_token", "") ?: "") }
+            TextFieldSetting(
+                label = "DuckDNS Token",
+                value = duckDnsToken,
+                placeholder = "Paste your DuckDNS token",
+                onValueChange = {
+                    duckDnsToken = it
+                    prefs.edit().putString("duckdns_token", it).apply()
+                }
+            )
+            InfoSetting("Domain", AppConfig.PUBLIC_DOMAIN)
             InfoSetting("VPN IP", AppConfig.DEFAULT_VIRTUAL_IP)
-            InfoSetting("DNS Domain", "super.taa")
+            InfoSetting("Local DNS", "super.taa")
 
             Spacer(Modifier.height(16.dp))
 
@@ -218,6 +232,33 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.labelLarge,
         color = TeslaBlue
     )
+}
+
+@Composable
+private fun TextFieldSetting(
+    label: String,
+    value: String,
+    placeholder: String = "",
+    onValueChange: (String) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(placeholder, color = TeslaGray) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = TeslaWhite,
+                unfocusedTextColor = TeslaWhite,
+                focusedBorderColor = TeslaBlue,
+                unfocusedBorderColor = TeslaSurfaceVariant,
+                cursorColor = TeslaBlue
+            )
+        )
+    }
 }
 
 @Composable

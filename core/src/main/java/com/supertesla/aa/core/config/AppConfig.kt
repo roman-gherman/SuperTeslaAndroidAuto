@@ -10,6 +10,7 @@ object AppConfig {
      * Users type this URL in Tesla's browser instead of an IP address.
      */
     const val PUBLIC_DOMAIN = "supertesla.duckdns.org"
+    const val DUCKDNS_SUBDOMAIN = "supertesla"
 
     const val ARP_POLL_INTERVAL_MS = 2000L
 
