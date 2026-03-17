@@ -103,6 +103,7 @@ class TransporterService : Service() {
     private var emulator: AAHeadUnitEmulator? = null
     private var nalStreamManager: NalStreamManager? = null
     private var hotspotManager: HotspotManager? = null
+    private var dnsServer: com.supertesla.aa.network.dns.LocalDnsServer? = null
 
     // WebSocket servers (3-port architecture like TaaDa)
     private var controlServer: ControlSocketServer? = null
@@ -188,6 +189,30 @@ class TransporterService : Service() {
                     }
                 } catch (e: Exception) {
                     Timber.w(e, "Hotspot monitoring failed")
+                }
+
+                // 2c. Start VPN tunnel (creates 240.3.3.3 interface, excludes AA)
+                Timber.i("PIPELINE: Step 2c — Starting VPN tunnel")
+                updateNotification("Starting VPN...")
+                try {
+                    startVpn()
+                    delay(1000) // Wait for VPN to establish
+                    Timber.i("PIPELINE: VPN started")
+                } catch (e: Exception) {
+                    Timber.w(e, "PIPELINE: VPN failed (non-fatal, continuing)")
+                }
+
+                // 2d. Start local DNS server
+                Timber.i("PIPELINE: Step 2d — Starting DNS server")
+                try {
+                    dnsServer = com.supertesla.aa.network.dns.LocalDnsServer(
+                        hostname = "super.taa",
+                        virtualIp = AppConfig.DEFAULT_VIRTUAL_IP
+                    )
+                    dnsServer?.start()
+                    Timber.i("PIPELINE: DNS server started (super.taa -> ${AppConfig.DEFAULT_VIRTUAL_IP})")
+                } catch (e: Exception) {
+                    Timber.w(e, "PIPELINE: DNS server failed (non-fatal)")
                 }
 
                 // 3. Start 3 WebSocket servers
@@ -553,6 +578,15 @@ class TransporterService : Service() {
 
         // Stop WebSocket servers
         try { stopWebSocketServers() } catch (_: Exception) {}
+
+        // Stop DNS server
+        try { dnsServer?.stop() } catch (_: Exception) {}
+        dnsServer = null
+
+        // Stop VPN
+        try {
+            stopService(Intent(this, VpnTunnelService::class.java))
+        } catch (_: Exception) {}
 
         // Release locks
         try { releaseLocks() } catch (_: Exception) {}
