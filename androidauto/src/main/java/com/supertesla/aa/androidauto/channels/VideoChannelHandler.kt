@@ -113,8 +113,7 @@ class VideoChannelHandler(
     }
 
     /**
-     * Request a keyframe (IDR + SPS/PPS) from Android Auto by sending VIDEO_FOCUS_INDICATION.
-     * TaaDa sends this with focus=PROJECTED, unsolicited=true.
+     * Request a keyframe (IDR + SPS/PPS) from Android Auto.
      */
     fun requestKeyframe() {
         Timber.i("Video: requesting keyframe via VIDEO_FOCUS_REQUEST (0x8007)")

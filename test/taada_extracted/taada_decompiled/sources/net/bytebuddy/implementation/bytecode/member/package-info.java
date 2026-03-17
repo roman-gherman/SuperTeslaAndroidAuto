@@ -1,5 +1,0 @@
-@NeverNull.ByDefault
-package net.bytebuddy.implementation.bytecode.member;
-
-import net.bytebuddy.utility.nullability.NeverNull;
-

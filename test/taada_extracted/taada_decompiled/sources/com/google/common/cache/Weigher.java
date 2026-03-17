@@ -1,6 +1,0 @@
-package com.google.common.cache;
-
-/* JADX INFO: loaded from: classes.dex */
-public interface Weigher<K, V> {
-    int weigh(K k6, V v6);
-}

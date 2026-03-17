@@ -322,24 +322,16 @@ class TransporterService : Service() {
                         startHeartbeat(config.heartbeatIntervalMs)
                         Timber.i("SESSION: Heartbeat started (${config.heartbeatIntervalMs}ms)")
 
-                        // Wire AA video → server's stable SharedFlow
+                        // Wire AA video to Ktor web server
                         launch {
                             emu.videoHandler?.let { handler ->
-                                server.videoFlowReady = true
+                                // Set videoFlow — the setter pipes into videoSharedFlow
+                                server.videoFlow = handler.videoFrames.map { it.data }
                                 Timber.i("SESSION: Video flow wired to Ktor web server")
-
-                                // Request keyframe so new/reconnected clients get SPS+PPS+IDR
-                                delay(500)
-                                handler.requestKeyframe()
 
                                 server.onClientConnected = {
                                     Timber.i("Browser client connected, requesting keyframe")
                                     handler.requestKeyframe()
-                                }
-
-                                // Collect from handler and emit into server's stable SharedFlow
-                                handler.videoFrames.collect { frame ->
-                                    server.videoSharedFlow.emit(frame.data)
                                 }
                             }
 
