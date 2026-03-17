@@ -2,6 +2,7 @@ package com.supertesla.aa.androidauto.channels
 
 import com.supertesla.aa.androidauto.proto.AvMessageType
 import com.supertesla.aa.androidauto.proto.ChannelId
+import com.supertesla.aa.androidauto.proto.ProtoEncoder
 import com.supertesla.aa.androidauto.proto.ServiceDiscovery
 import com.supertesla.aa.androidauto.protocol.AapFramer
 import com.supertesla.aa.androidauto.protocol.ChannelHandler
@@ -9,6 +10,7 @@ import com.supertesla.aa.androidauto.protocol.ChannelMux
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -28,6 +30,9 @@ class VideoChannelHandler(
         extraBufferCapacity = 30
     )
     val videoFrames: SharedFlow<VideoFrame> = _videoFrames
+
+    /** Session ID from START_INDICATION, used for ACKs. */
+    var sessionId: Int = -1
 
     // Cache codec config (SPS+PPS) and first IDR for late subscribers
     @Volatile var cachedCodecConfig: ByteArray? = null
@@ -79,7 +84,7 @@ class VideoChannelHandler(
 
             AvMessageType.START_INDICATION -> {
                 Timber.i("Video: stream started (StartIndication)")
-                val sessionId = if (body.isNotEmpty()) {
+                sessionId = if (body.isNotEmpty()) {
                     try {
                         val fields = com.supertesla.aa.androidauto.proto.ProtoEncoder.readFields(body)
                         fields.firstOrNull { it.fieldNumber == 1 }?.intValue ?: 0
@@ -119,6 +124,19 @@ class VideoChannelHandler(
         Timber.i("Video: requesting keyframe via VIDEO_FOCUS_REQUEST (0x8007)")
         val payload = ServiceDiscovery.buildVideoFocusIndication(mode = 1, unsolicited = true)
         mux.sendEncrypted(ChannelId.VIDEO, AvMessageType.VIDEO_FOCUS_REQUEST, payload)
+    }
+
+    /**
+     * Send MEDIA_ACK to AA for video frames.
+     * Called by the browser via WebSocket when it has processed a frame.
+     * TaaDa uses browser-driven ACKs with maxUnacked=1 for flow control.
+     */
+    fun sendAck() {
+        if (sessionId < 0) return
+        val out = ByteArrayOutputStream()
+        ProtoEncoder.writeVarintField(out, 1, sessionId.toLong())
+        ProtoEncoder.writeVarintField(out, 2, 1) // ack = 1
+        mux.sendEncrypted(ChannelId.VIDEO, AvMessageType.MEDIA_ACK, out.toByteArray())
     }
 
     private suspend fun emitVideo(data: ByteArray, timestamp: Long) {
