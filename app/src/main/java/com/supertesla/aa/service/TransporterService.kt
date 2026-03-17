@@ -322,25 +322,24 @@ class TransporterService : Service() {
                         startHeartbeat(config.heartbeatIntervalMs)
                         Timber.i("SESSION: Heartbeat started (${config.heartbeatIntervalMs}ms)")
 
-                        // Wire AA video to Ktor web server's video flow
+                        // Wire AA video → server's stable SharedFlow
                         launch {
                             emu.videoHandler?.let { handler ->
-                                server.videoFlow = kotlinx.coroutines.flow.flow {
-                                    handler.cachedCodecConfig?.let {
-                                        Timber.i("Emitting cached codec config to new subscriber: ${it.size}b")
-                                        emit(it)
-                                    }
-                                    handler.cachedIdr?.let {
-                                        Timber.i("Emitting cached IDR to new subscriber: ${it.size}b")
-                                        emit(it)
-                                    }
-                                    handler.videoFrames.collect { emit(it.data) }
-                                }
+                                server.videoFlowReady = true
                                 Timber.i("SESSION: Video flow wired to Ktor web server")
+
+                                // Request keyframe so new/reconnected clients get SPS+PPS+IDR
+                                delay(500)
+                                handler.requestKeyframe()
 
                                 server.onClientConnected = {
                                     Timber.i("Browser client connected, requesting keyframe")
                                     handler.requestKeyframe()
+                                }
+
+                                // Collect from handler and emit into server's stable SharedFlow
+                                handler.videoFrames.collect { frame ->
+                                    server.videoSharedFlow.emit(frame.data)
                                 }
                             }
 

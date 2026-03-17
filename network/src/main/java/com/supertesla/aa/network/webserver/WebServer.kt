@@ -37,7 +37,24 @@ class WebServer(
     private var server: ApplicationEngine? = null
     private var serverPort80: ApplicationEngine? = null
     var videoStreamHandler: VideoStreamHandler? = null
-    var videoFlow: Flow<ByteArray>? = null
+    /** Stable video flow — lives for the entire server lifetime. Emit into this. */
+    val videoSharedFlow = kotlinx.coroutines.flow.MutableSharedFlow<ByteArray>(
+        replay = 0,
+        extraBufferCapacity = 30
+    )
+    @Volatile var videoFlowReady: Boolean = false
+
+    /** Legacy setter — for MainService screen capture mode. Collects from the given flow into videoSharedFlow. */
+    var videoFlow: Flow<ByteArray>?
+        get() = if (videoFlowReady) videoSharedFlow else null
+        set(value) {
+            if (value != null) {
+                videoFlowReady = true
+                kotlinx.coroutines.GlobalScope.launch {
+                    value.collect { videoSharedFlow.emit(it) }
+                }
+            }
+        }
     var touchInputRelay: TouchInputRelay? = null
     var signalingHandler: SignalingHandler? = null
     var onClientConnected: (() -> Unit)? = null
@@ -119,11 +136,10 @@ class WebServer(
                     val handler = videoStreamHandler
                     val clients = handler?.connectedClients ?: 0
                     val frames = handler?.totalFramesSent ?: 0
-                    val hasVideoFlow = videoFlow != null
+                    val hasVideoFlow = videoFlowReady
                     val signaling = signalingHandler != null
-                    // Test if video flow is actually producing frames
                     call.respondText(
-                        """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames,"hasVideoFlow":$hasVideoFlow,"hasSignaling":$signaling,"flowType":"${videoFlow?.javaClass?.simpleName ?: "null"}"}""",
+                        """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames,"hasVideoFlow":$hasVideoFlow,"hasSignaling":$signaling}""",
                         ContentType.Application.Json
                     )
                 }
@@ -135,8 +151,7 @@ class WebServer(
 
                 // MJPEG fallback stream
                 get("/stream.mjpeg") {
-                    val flow = videoFlow
-                    if (flow == null) {
+                    if (!videoFlowReady) {
                         call.respondText("Video not available", status = io.ktor.http.HttpStatusCode.ServiceUnavailable)
                         return@get
                     }
@@ -147,7 +162,7 @@ class WebServer(
                             width = 1280, height = 720, quality = 75
                         )
                         try {
-                            mjpeg.start(flow).collect { jpeg ->
+                            mjpeg.start(videoSharedFlow).collect { jpeg ->
                                 write("--frame\r\n".toByteArray())
                                 write("Content-Type: image/jpeg\r\n".toByteArray())
                                 write("Content-Length: ${jpeg.size}\r\n\r\n".toByteArray())
@@ -171,19 +186,16 @@ class WebServer(
                     val handler = videoStreamHandler
                     val relay = touchInputRelay
 
-                    // Wait for video flow to become available (screen capture may start later)
+                    // Stream video: wait until flow is ready, then collect from the
+                    // stable shared flow (survives AA reconnects).
                     val videoJob = launch {
-                        // Poll until video flow is available
-                        var flow = videoFlow
-                        while (flow == null) {
+                        while (!videoFlowReady) {
                             handler?.sendWaitingMessage(this@webSocket)
                             kotlinx.coroutines.delay(2000)
-                            flow = videoFlow
                         }
-                        // Video flow available - start streaming
-                        Timber.i("Video flow available, starting stream to client")
+                        Timber.i("Video flow ready, starting stream to client")
                         try {
-                            handler?.handleClient(this@webSocket, flow)
+                            handler?.handleClient(this@webSocket, videoSharedFlow)
                         } catch (e: Exception) {
                             Timber.d("Video stream ended: ${e.message}")
                         }
