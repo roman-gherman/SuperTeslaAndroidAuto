@@ -81,7 +81,7 @@ class ControlSocketServer(
                     conn.send(PING_RESPONSE.duplicate())
                     onAction("PING", json)
                 }
-                "ACK" -> { /* log only */ }
+                "ACK" -> onAction("ACK", json)
 
                 // Touch events (TaaDa MULTITOUCH format)
                 "MULTITOUCH_DOWN" -> handleMultiTouch(ACTION_DOWN, json)

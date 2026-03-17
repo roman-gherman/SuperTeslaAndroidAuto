@@ -450,11 +450,22 @@
             if (window.SuperTeslaTouch) window.SuperTeslaTouch.setWebSocket(ws);
             ws.send(JSON.stringify({ action: 'START' }));
             ws.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
+            // Start PING keepalive every 2 seconds (TaaDa compat)
+            if (window._pingInterval) clearInterval(window._pingInterval);
+            window._pingInterval = setInterval(function() {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ action: 'PING', fps: window._currentFps || 0 }));
+                }
+            }, 2000);
         };
 
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
                 processBinaryFrame(event.data);
+                // Send ACK after processing video frame (TaaDa flow control)
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ action: 'ACK' }));
+                }
             } else {
                 try {
                     var msg = JSON.parse(event.data);
@@ -465,6 +476,7 @@
 
         ws.onclose = function() {
             setStatus('', 'Disconnected');
+            if (window._pingInterval) { clearInterval(window._pingInterval); window._pingInterval = null; }
             ws = null;
             resetState();
             scheduleReconnect();

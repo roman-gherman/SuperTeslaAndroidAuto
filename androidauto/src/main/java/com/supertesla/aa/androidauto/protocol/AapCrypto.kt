@@ -28,6 +28,9 @@ class AapCrypto {
     private lateinit var netOutBuffer: ByteBuffer
     private lateinit var appInBuffer: ByteBuffer
 
+    /** Lock to prevent concurrent SSLEngine access (SSLEngine is not thread-safe). */
+    private val sslLock = Any()
+
     val isHandshakeComplete: Boolean
         get() = ::sslEngine.isInitialized &&
                 sslEngine.handshakeStatus == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING
@@ -184,11 +187,17 @@ class AapCrypto {
      * Encrypt application data for sending.
      * Returns the TLS record(s) wrapping the plaintext.
      */
-    fun encrypt(plaintext: ByteArray): ByteArray {
+    fun encrypt(plaintext: ByteArray): ByteArray = synchronized(sslLock) {
         val inBuf = ByteBuffer.wrap(plaintext)
-        val outBuf = ByteBuffer.allocate(sslEngine.session.packetBufferSize + plaintext.size)
+        var outBuf = ByteBuffer.allocate(sslEngine.session.packetBufferSize + plaintext.size)
 
-        val result = sslEngine.wrap(inBuf, outBuf)
+        var result = sslEngine.wrap(inBuf, outBuf)
+        // Handle BUFFER_OVERFLOW by doubling the output buffer
+        while (result.status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+            outBuf = ByteBuffer.allocate(outBuf.capacity() * 2)
+            inBuf.rewind()
+            result = sslEngine.wrap(inBuf, outBuf)
+        }
         if (result.status != SSLEngineResult.Status.OK) {
             Timber.w("SSL encrypt status: ${result.status}")
         }
@@ -196,16 +205,16 @@ class AapCrypto {
         outBuf.flip()
         val encrypted = ByteArray(outBuf.remaining())
         outBuf.get(encrypted)
-        return encrypted
+        encrypted
     }
 
     /**
      * Decrypt received TLS record(s) to application data.
      * Returns the decrypted plaintext.
      */
-    fun decrypt(ciphertext: ByteArray): ByteArray {
+    fun decrypt(ciphertext: ByteArray): ByteArray = synchronized(sslLock) {
         val inBuf = ByteBuffer.wrap(ciphertext)
-        val outBuf = ByteBuffer.allocate(sslEngine.session.applicationBufferSize + ciphertext.size)
+        var outBuf = ByteBuffer.allocate(sslEngine.session.applicationBufferSize + ciphertext.size)
 
         while (inBuf.hasRemaining()) {
             val result = sslEngine.unwrap(inBuf, outBuf)
@@ -213,9 +222,11 @@ class AapCrypto {
                 SSLEngineResult.Status.OK -> {}
                 SSLEngineResult.Status.BUFFER_UNDERFLOW -> break
                 SSLEngineResult.Status.BUFFER_OVERFLOW -> {
-                    // This shouldn't happen with our buffer sizing, but handle it
-                    Timber.w("SSL decrypt buffer overflow")
-                    break
+                    // Reallocate with double capacity and retry
+                    val newBuf = ByteBuffer.allocate(outBuf.capacity() * 2)
+                    outBuf.flip()
+                    newBuf.put(outBuf)
+                    outBuf = newBuf
                 }
                 SSLEngineResult.Status.CLOSED -> {
                     Timber.w("SSL engine closed")
@@ -228,7 +239,7 @@ class AapCrypto {
         outBuf.flip()
         val decrypted = ByteArray(outBuf.remaining())
         outBuf.get(decrypted)
-        return decrypted
+        decrypted
     }
 
     fun close() {

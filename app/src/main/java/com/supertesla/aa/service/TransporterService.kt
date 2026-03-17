@@ -104,6 +104,7 @@ class TransporterService : Service() {
     private var nalStreamManager: NalStreamManager? = null
     private var hotspotManager: HotspotManager? = null
     private var dnsServer: com.supertesla.aa.network.dns.LocalDnsServer? = null
+    private var keepaliveWatchdog: com.supertesla.aa.streaming.video.KeepaliveWatchdog? = null
 
     // WebSocket servers (3-port architecture like TaaDa)
     private var controlServer: ControlSocketServer? = null
@@ -216,6 +217,16 @@ class TransporterService : Service() {
                 }
 
                 // 3. Start 3 WebSocket servers
+                // Create keepalive watchdog (3s timeout, disables video focus on browser disconnect)
+                keepaliveWatchdog = com.supertesla.aa.streaming.video.KeepaliveWatchdog(
+                    scope = this@launch,
+                    timeoutMs = 3000L,
+                    onTimeout = {
+                        Timber.w("Browser keepalive timeout — disabling video focus")
+                        nalStreamManager?.toggleVideoFocus(false)
+                    }
+                )
+
                 wsBasePort = (8090 + (Math.random() * 1908).toInt())
                 Timber.i("PIPELINE: Step 3 — Starting WebSocket servers on ports $wsBasePort, ${wsBasePort+1}, ${wsBasePort+2}")
                 updateNotification("Starting WebSocket servers...")
@@ -468,14 +479,17 @@ class TransporterService : Service() {
                     }
                     "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
                     "PING" -> {
-                        serviceScope.launch {
-                            delay(3000)
-                            nalStreamManager?.toggleVideoFocus(true)
-                        }
+                        // Reset keepalive watchdog on each PING
+                        keepaliveWatchdog?.reset()
+                    }
+                    "ACK" -> {
+                        // Forward video ACK to AA protocol
+                        emulator?.videoHandler?.sendAck()
                     }
                     "CONNECTED" -> {
-                        // Browser connected — request keyframe when video starts
+                        // Browser connected — start keepalive watchdog
                         Timber.i("Browser client connected on port $basePort")
+                        keepaliveWatchdog?.start()
                     }
                 }
             },
@@ -578,6 +592,10 @@ class TransporterService : Service() {
 
         // Stop WebSocket servers
         try { stopWebSocketServers() } catch (_: Exception) {}
+
+        // Cancel keepalive watchdog
+        try { keepaliveWatchdog?.cancel() } catch (_: Exception) {}
+        keepaliveWatchdog = null
 
         // Stop DNS server
         try { dnsServer?.stop() } catch (_: Exception) {}

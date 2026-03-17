@@ -55,6 +55,13 @@ class WebServer(
                 }
             }
         }
+    // Config endpoint fields (set by TransporterService)
+    var configVideoWidth: Int = 1280
+    var configVideoHeight: Int = 720
+    var configWsPort: Int? = null
+    var configResolution: Int = 1
+    var configUseBt: Boolean = true
+
     var touchInputRelay: TouchInputRelay? = null
     var signalingHandler: SignalingHandler? = null
     var onClientConnected: (() -> Unit)? = null
@@ -140,6 +147,20 @@ class WebServer(
                     val signaling = signalingHandler != null
                     call.respondText(
                         """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames,"hasVideoFlow":$hasVideoFlow,"hasSignaling":$signaling}""",
+                        ContentType.Application.Json
+                    )
+                }
+
+                // Configuration endpoint for Tesla browser (TaaDa-compatible)
+                get("/config") {
+                    val screenWidth = call.parameters["w"]?.toIntOrNull() ?: 1920
+                    val screenHeight = call.parameters["h"]?.toIntOrNull() ?: 1080
+                    val videoWidth = configVideoWidth
+                    val videoHeight = configVideoHeight
+                    val wMargin = MarginCalculator.calculateWidthMargin(videoWidth, videoHeight, screenWidth, screenHeight)
+                    val hMargin = MarginCalculator.calculateHeightMargin(videoWidth, videoHeight, screenWidth, screenHeight)
+                    call.respondText(
+                        """{"width":$videoWidth,"height":$videoHeight,"widthMargin":$wMargin,"heightMargin":$hMargin,"port":${configWsPort ?: port},"resolution":$configResolution,"version":1,"usebt":$configUseBt,"debug":false}""",
                         ContentType.Application.Json
                     )
                 }
