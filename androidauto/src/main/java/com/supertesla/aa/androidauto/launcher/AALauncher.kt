@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.wifi.WifiManager
 import timber.log.Timber
 import java.net.Socket
@@ -60,11 +61,12 @@ object AALauncher {
         serverIp: String = "127.0.0.1",
         serverPort: Int = AA_WIRELESS_PORT
     ): Boolean {
-        // Method 1: Start WirelessStartupActivity (works on most AA versions)
-        if (launchViaActivity(context, serverIp, serverPort)) return true
-
-        // Method 2: Broadcast to WirelessStartupReceiver (AA v16+)
+        // Method 1: Broadcast to WirelessStartupReceiver (AA v16+)
+        // Broadcast doesn't require a Network object — simpler and works on newer AA
         if (launchViaBroadcast(context, serverIp, serverPort)) return true
+
+        // Method 2: Start WirelessStartupActivity (older AA, needs Network)
+        if (launchViaActivity(context, serverIp, serverPort)) return true
 
         Timber.w("All wireless projection methods failed")
         return false
@@ -74,6 +76,9 @@ object AALauncher {
         return try {
             val intent = Intent(WIRELESS_RECEIVER_ACTION).apply {
                 component = ComponentName(AA_PACKAGE, WIRELESS_RECEIVER)
+                putExtra("ip_address", serverIp)
+                putExtra("projection_port", serverPort)
+                // Also try TaaDa's param names
                 putExtra("PARAM_HOST_ADDRESS", serverIp)
                 putExtra("PARAM_SERVICE_PORT", serverPort)
             }
@@ -86,17 +91,51 @@ object AALauncher {
         }
     }
 
+    /**
+     * Create a mock Network with ID 99999 (TaaDa's trick).
+     * AA uses this Network to bind its socket. With a fake Network,
+     * AA falls back to default routing — which the VPN directs to localhost.
+     *
+     * Tries multiple approaches for different Android versions:
+     * 1. Network(int) constructor (Android < 14)
+     * 2. Network.fromNetworkHandle(long) static method (Android 6+)
+     */
+    private fun createMockNetwork(): Network? {
+        // Method 1: Direct constructor Network(int netId) — works on older Android
+        try {
+            val constructor = Network::class.java.getDeclaredConstructor(Int::class.javaPrimitiveType)
+            constructor.isAccessible = true
+            return constructor.newInstance(99999) as Network
+        } catch (_: Exception) {}
+
+        // Method 2: fromNetworkHandle — converts a long handle to a Network
+        // The handle encoding is: (netId.toLong() shl 32) | 0xFCAFE (magic)
+        // But simpler: netId * 1L works on some versions
+        try {
+            val method = Network::class.java.getDeclaredMethod("fromNetworkHandle", Long::class.javaPrimitiveType)
+            // Network handle = netId << 32 on most Android versions
+            val handle = 99999L shl 32
+            return method.invoke(null, handle) as Network
+        } catch (_: Exception) {}
+
+        Timber.w("Could not create mock Network — AA will use real network (may fail to connect)")
+        return null
+    }
+
     private fun launchViaActivity(context: Context, serverIp: String, serverPort: Int): Boolean {
         return try {
-            // Get active network (TaaDa passes this to AA)
+            // Create mock Network(99999) — TaaDa's key trick.
+            // With a fake network, AA can't bind to a real interface,
+            // so it falls back to default routing → localhost via VPN.
+            val mockNetwork = createMockNetwork()
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val activeNetwork = cm.activeNetwork
+            val network = mockNetwork ?: cm.activeNetwork
 
             // Get WifiInfo from WifiManager (AA needs this to validate the connection)
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             @Suppress("DEPRECATION")
             val wifiInfo: android.os.Parcelable? = wm?.connectionInfo
-            Timber.d("WifiInfo: $wifiInfo, activeNetwork: $activeNetwork")
+            Timber.d("WifiInfo: $wifiInfo, network: $network (mock=${mockNetwork != null})")
 
             val intent = Intent().apply {
                 component = ComponentName(AA_PACKAGE, WIRELESS_ACTIVITY)
@@ -104,11 +143,15 @@ object AALauncher {
                 putExtra("PARAM_HOST_ADDRESS", serverIp)
                 putExtra("PARAM_SERVICE_PORT", serverPort)
                 if (wifiInfo != null) putExtra("wifi_info", wifiInfo)
-                if (activeNetwork != null) putExtra("PARAM_SERVICE_WIFI_NETWORK", activeNetwork)
+                if (network != null) putExtra("PARAM_SERVICE_WIFI_NETWORK", network)
             }
             context.startActivity(intent)
-            Timber.i("Launched WirelessStartupActivity -> $serverIp:$serverPort (network=$activeNetwork, wifiInfo=$wifiInfo)")
+            Timber.i("Launched WirelessStartupActivity -> $serverIp:$serverPort (network=$network, mock=${mockNetwork != null})")
             true
+        } catch (e: SecurityException) {
+            // AA v16.4+ may not export the Activity — fall back to broadcast
+            Timber.d("WirelessStartupActivity not exported: ${e.message}")
+            false
         } catch (e: Exception) {
             Timber.d("WirelessStartupActivity failed: ${e.message}")
             false
