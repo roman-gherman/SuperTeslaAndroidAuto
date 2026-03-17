@@ -68,11 +68,13 @@ class VideoChannelHandler(
                 val timestamp = readTimestamp(body)
                 val videoData = body.copyOfRange(8, body.size)
                 emitVideo(videoData, timestamp)
+                sendAck() // Server-side ACK (TaaDa sends ACK immediately, not via browser)
             }
 
             AvMessageType.MEDIA_INDICATION -> {
                 if (body.isEmpty()) return
                 emitVideo(body, System.nanoTime())
+                sendAck() // Server-side ACK
             }
 
             AvMessageType.SETUP_REQUEST -> {

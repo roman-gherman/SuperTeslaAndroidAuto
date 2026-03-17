@@ -152,6 +152,10 @@ class NalStreamManager {
      * Toggle video focus: tells AA to start/stop sending video.
      */
     fun toggleVideoFocus(focused: Boolean) {
+        if (hasFocus == focused) {
+            Timber.d("$TAG: Video focus already ${if (focused) "ON" else "OFF"} — skipping")
+            return
+        }
         hasFocus = focused
         onSendVideoFocus?.invoke(focused, true) // TaaDa always sends unsolicited=true
         Timber.d("$TAG: Video focus ${if (focused) "ON (PROJECTED)" else "OFF (NATIVE)"}")

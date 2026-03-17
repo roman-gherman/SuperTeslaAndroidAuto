@@ -359,6 +359,8 @@ class TransporterService : Service() {
                             Timber.i("Ktor WS: START → enabling video focus")
                             keepaliveWatchdog?.start()
                             nalStreamManager?.toggleVideoFocus(true)
+                            // Request keyframe so browser gets a decodable frame
+                            nalStreamManager?.requestKeyFrame()
                         }
                         "STOP" -> {
                             keepaliveWatchdog?.cancel()
@@ -448,16 +450,10 @@ class TransporterService : Service() {
                                 Timber.i("SESSION: Video flow wired to Ktor web server")
 
                                 server.onClientConnected = {
-                                    try {
-                                        if (isConnected) {
-                                            Timber.i("Browser client connected, requesting keyframe")
-                                            handler.requestKeyframe()
-                                        } else {
-                                            Timber.d("Browser client connected but AA not yet connected — skipping keyframe")
-                                        }
-                                    } catch (e: Exception) {
-                                        Timber.w(e, "Failed to request keyframe on client connect")
-                                    }
+                                    // Don't request keyframe here — let the browser's START
+                                    // action trigger video focus. This avoids flooding AA
+                                    // with focus messages on every browser reconnect.
+                                    Timber.d("Browser client connected (keyframe will be requested on START)")
                                 }
                             }
 

@@ -490,10 +490,10 @@
 
         ws.onopen = function() {
             setStatus('connected', mode.toUpperCase() + ': Connected');
-            reconnectDelay = 1000;
+            // Don't reset reconnectDelay here — only reset after receiving actual video data
             if (window.SuperTeslaTouch) window.SuperTeslaTouch.setWebSocket(ws);
+            // Send START once — server will enable video focus
             ws.send(JSON.stringify({ action: 'START' }));
-            ws.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
             // Start PING keepalive every 2 seconds (TaaDa compat)
             if (window._pingInterval) clearInterval(window._pingInterval);
             window._pingInterval = setInterval(function() {
@@ -505,6 +505,7 @@
 
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
+                reconnectDelay = 1000; // Reset backoff on actual data
                 processBinaryFrame(event.data);
                 // Send ACK after processing video frame (TaaDa flow control)
                 if (ws && ws.readyState === WebSocket.OPEN) {
