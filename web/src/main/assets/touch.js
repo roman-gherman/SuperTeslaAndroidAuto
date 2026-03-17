@@ -2,7 +2,7 @@
     'use strict';
 
     var touchpad = document.getElementById('touchpad');
-    var videoEl = document.getElementById('player');
+    var videoEl = document.getElementById('player-video') || document.getElementById('player-canvas');
     var activePointers = {};
     var pendingMoves = {};
     var rafScheduled = false;
@@ -21,7 +21,7 @@
 
     function getVideoRect() {
         // Get the actual video display area (accounting for object-fit: contain letterboxing)
-        var el = document.getElementById('player');
+        var el = document.getElementById('player-video') || document.getElementById('player-canvas');
         if (!el) return null;
         return el.getBoundingClientRect();
     }
