@@ -65,6 +65,8 @@ class WebServer(
     var touchInputRelay: TouchInputRelay? = null
     var signalingHandler: SignalingHandler? = null
     var onClientConnected: (() -> Unit)? = null
+    /** Callback for control actions from browser (START, STOP, ACK, PING, REQUEST_KEYFRAME, etc.) */
+    var onAction: ((action: String, json: String) -> Unit)? = null
     var diagnosticInfo: (() -> String)? = null
 
     val isRunning: Boolean
@@ -228,9 +230,19 @@ class WebServer(
                             when (frame) {
                                 is Frame.Text -> {
                                     val text = frame.readText()
+                                    // Try touch relay first
                                     val handled = relay?.handleMessage(text) ?: false
                                     if (!handled) {
-                                        Timber.v("WS unhandled text: $text")
+                                        // Try control action (START, STOP, ACK, PING, etc.)
+                                        try {
+                                            val json = org.json.JSONObject(text)
+                                            val action = json.optString("action", "")
+                                            if (action.isNotEmpty()) {
+                                                onAction?.invoke(action, text)
+                                            }
+                                        } catch (_: Exception) {
+                                            Timber.v("WS unhandled text: $text")
+                                        }
                                     }
                                 }
                                 is Frame.Close -> break

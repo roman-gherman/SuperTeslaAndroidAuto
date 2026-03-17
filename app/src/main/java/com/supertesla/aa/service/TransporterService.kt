@@ -303,6 +303,23 @@ class TransporterService : Service() {
                 server.configVideoWidth = videoWidth
                 server.configVideoHeight = videoHeight
                 server.configUseBt = config.useBluetooth
+                // Wire control actions from Ktor WebSocket (same as ControlSocketServer)
+                server.onAction = { action, _ ->
+                    when (action) {
+                        "START" -> {
+                            Timber.i("Ktor WS: START → enabling video focus")
+                            nalStreamManager?.toggleVideoFocus(true)
+                        }
+                        "STOP" -> nalStreamManager?.toggleVideoFocus(false)
+                        "ACK" -> emulator?.videoHandler?.sendAck()
+                        "PING" -> keepaliveWatchdog?.reset()
+                        "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
+                        "RELOAD" -> {
+                            nalStreamManager?.toggleVideoFocus(false)
+                            serviceScope.launch { delay(100); nalStreamManager?.toggleVideoFocus(true) }
+                        }
+                    }
+                }
                 webServer = server
                 try {
                     server.start()
