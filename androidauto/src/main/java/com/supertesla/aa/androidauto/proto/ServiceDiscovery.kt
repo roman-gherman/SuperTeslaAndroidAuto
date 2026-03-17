@@ -201,7 +201,7 @@ object ServiceDiscovery {
 
     fun buildMediaSetupResponse(configIndex: Int = 0, maxUnacked: Int = 1): ByteArray {
         val out = ByteArrayOutputStream()
-        ProtoEncoder.writeVarintField(out, 1, 0) // status = STATUS_OK
+        ProtoEncoder.writeVarintField(out, 1, 2) // status = STATUS_READY (TaaDa's Config.Status.STATUS_READY)
         ProtoEncoder.writeVarintField(out, 2, maxUnacked.toLong())
         ProtoEncoder.writeVarintField(out, 3, configIndex.toLong())
         return out.toByteArray()

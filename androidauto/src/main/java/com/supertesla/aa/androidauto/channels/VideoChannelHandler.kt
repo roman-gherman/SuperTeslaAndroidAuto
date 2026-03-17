@@ -91,6 +91,14 @@ class VideoChannelHandler(
                     } catch (e: Exception) { 0 }
                 } else 0
                 Timber.d("Video session ID: $sessionId")
+
+                // NOW send VideoFocusNotification (0x8008) to tell AA to start
+                // sending video frames. TaaDa sends this on channel 3 with
+                // focus=PROJECTED, unsolicited=true AFTER the media pipeline
+                // is ready (SetupRequest → SetupResponse → START_INDICATION).
+                val focusPayload = ServiceDiscovery.buildVideoFocusIndication(mode = 1, unsolicited = true)
+                mux.sendEncrypted(ChannelId.VIDEO, AvMessageType.VIDEO_FOCUS_INDICATION, focusPayload)
+                Timber.i("Video: sent VideoFocusNotification(PROJECTED, unsolicited=true) on ch=3 type=0x8008 AFTER StartIndication")
             }
 
             AvMessageType.STOP_INDICATION -> {

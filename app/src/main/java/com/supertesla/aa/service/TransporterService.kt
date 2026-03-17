@@ -276,8 +276,9 @@ class TransporterService : Service() {
                     scope = serviceScope,
                     timeoutMs = 5000L, // 5s timeout (browser PINGs every 2s)
                     onTimeout = {
-                        Timber.w("Browser keepalive timeout — disabling video focus")
-                        nalStreamManager?.toggleVideoFocus(false)
+                        // DISABLED FOR NOW — keepalive was killing video focus prematurely
+                        // before browser PING could arrive. Re-enable after video works.
+                        Timber.w("Browser keepalive timeout (IGNORED for now)")
                     }
                 )
 

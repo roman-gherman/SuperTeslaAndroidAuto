@@ -378,10 +378,10 @@ class AAHeadUnitEmulator(
                 if (channelId == ChannelId.SENSOR) {
                     sensorHandler?.sendDrivingStatus()
                 }
-                if (channelId == ChannelId.VIDEO) {
-                    val focusPayload = ServiceDiscovery.buildVideoFocusIndication()
-                    channelMux.sendEncrypted(ChannelId.VIDEO, AvMessageType.VIDEO_FOCUS_INDICATION, focusPayload)
-                }
+                // NOTE: Do NOT send VIDEO_FOCUS here — it's too early.
+                // AA ignores focus notifications sent before SetupRequest/SetupResponse/
+                // START_INDICATION completes. The focus is now sent from
+                // VideoChannelHandler.onFrame(START_INDICATION) instead.
             },
             onShutdown = { disconnect() }
         )
@@ -444,19 +444,23 @@ class AAHeadUnitEmulator(
 
     /**
      * Send video focus notification to AA.
+     *
+     * TaaDa sends VideoFocusNotification (0x8008) on VIDEO channel (3),
+     * NOT on the control channel. This matches the AV message type table:
+     *   0x8007 = VIDEO_FOCUS_REQUEST (keyframe request)
+     *   0x8008 = VIDEO_FOCUS_NOTIFICATION (focus on/off)
+     *
      * @param projected true = send video (PROJECTED mode), false = stop video (NATIVE mode)
-     * @param unsolicited true = keyframe request
+     * @param unsolicited true = unsolicited (keyframe request style)
      */
-    fun sendVideoFocus(projected: Boolean, unsolicited: Boolean = false) {
+    fun sendVideoFocus(projected: Boolean, unsolicited: Boolean = true) {
         try {
-            val payload = com.supertesla.aa.androidauto.proto.ProtoEncoder.encode {
-                // field 1: mode (1=PROJECTED, 2=NATIVE)
-                writeVarint(1, if (projected) 1L else 2L)
-                // field 2: unsolicited
-                if (unsolicited) writeVarint(2, 1L)
-            }
-            mux?.sendEncrypted(ChannelId.CONTROL, MessageType.VIDEO_FOCUS_NOTIFICATION, payload)
-            Timber.d("Sent VideoFocus: projected=$projected, unsolicited=$unsolicited")
+            val payload = ServiceDiscovery.buildVideoFocusIndication(
+                mode = if (projected) 1 else 2,
+                unsolicited = unsolicited
+            )
+            mux?.sendEncrypted(ChannelId.VIDEO, AvMessageType.VIDEO_FOCUS_INDICATION, payload)
+            Timber.d("Sent VideoFocus on ch=VIDEO(3) type=0x8008: projected=$projected, unsolicited=$unsolicited")
         } catch (e: Exception) {
             Timber.w(e, "Failed to send video focus")
         }

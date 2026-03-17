@@ -153,7 +153,7 @@ class NalStreamManager {
      */
     fun toggleVideoFocus(focused: Boolean) {
         hasFocus = focused
-        onSendVideoFocus?.invoke(focused, false)
+        onSendVideoFocus?.invoke(focused, true) // TaaDa always sends unsolicited=true
         Timber.d("$TAG: Video focus ${if (focused) "ON (PROJECTED)" else "OFF (NATIVE)"}")
     }
 
