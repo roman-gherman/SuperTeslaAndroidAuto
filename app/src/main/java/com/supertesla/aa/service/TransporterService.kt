@@ -28,7 +28,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -53,6 +55,9 @@ class TransporterService : Service() {
 
         private const val NOTIFICATION_CHANNEL_ID = "supertesla_transporter"
         private const val NOTIFICATION_ID = 1002
+
+        /** Delay between AA reconnection attempts. */
+        private const val RECONNECT_DELAY_MS = 2_500L
 
         val isActiveFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
         val isConnectedFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
@@ -165,7 +170,7 @@ class TransporterService : Service() {
                 Timber.i("PIPELINE: Step 2 — Cleaning up old AA sessions")
                 try {
                     Runtime.getRuntime().exec(arrayOf("am", "force-stop", "com.google.android.projection.gearhead"))
-                    kotlinx.coroutines.delay(500)
+                    delay(500)
                 } catch (_: Exception) {}
 
                 // 2b. Start hotspot monitoring
@@ -219,7 +224,7 @@ class TransporterService : Service() {
                 updateNotification("Server ready: $serverUrl")
                 Timber.i("Web server accessible at $serverUrl")
 
-                // 6. Create AA emulator and set up connection
+                // 6. Create AA emulator (single instance; reconnects reuse the same object)
                 updateNotification("Waiting for Android Auto...")
                 val config = HeadUnitConfig()
                 val emu = AAHeadUnitEmulator(config, this@TransporterService)
@@ -237,7 +242,7 @@ class TransporterService : Service() {
                     emu.sendVideoFocus(projected, unsolicited)
                 }
 
-                // Wire emulator state changes
+                // Wire emulator state changes — also used by reconnect loop to stop heartbeat
                 emu.onStateChanged = { state ->
                     Timber.i("AA Emulator state: ${state::class.simpleName}")
                     when (state) {
@@ -251,9 +256,16 @@ class TransporterService : Service() {
                             isConnected = true
                             updateNotification("Streaming")
                         }
-                        is AAHeadUnitEmulator.State.Error ->
-                            updateNotification("Error: ${state.message}")
+                        is AAHeadUnitEmulator.State.Error -> {
+                            // Connection dropped — stop heartbeat immediately so it
+                            // does not keep hammering a dead socket.
+                            stopHeartbeat()
+                            isConnected = false
+                            isVideoActive = false
+                            updateNotification("Reconnecting... (${state.message})")
+                        }
                         is AAHeadUnitEmulator.State.Disconnected -> {
+                            stopHeartbeat()
                             isConnected = false
                             isVideoActive = false
                         }
@@ -261,20 +273,9 @@ class TransporterService : Service() {
                     }
                 }
 
-                // 6. Launch AA and listen for connection
-                // Start listening BEFORE launching AA so the socket is ready
-                launch {
-                    try {
-                        emu.listenAndConnect()
-                    } catch (e: Exception) {
-                        Timber.e(e, "AA emulator failed")
-                        updateNotification("AA connection failed: ${e.message}")
-                    }
-                }
-
-                // Give the server socket a moment to start, then launch AA
-                kotlinx.coroutines.delay(500)
-                Timber.i("Launching Android Auto...")
+                // Give the server socket a moment to start, then launch AA once.
+                delay(500)
+                Timber.i("PIPELINE: Launching Android Auto for initial connection...")
                 try {
                     AALauncher.launchWirelessProjection(this@TransporterService)
                 } catch (e: Exception) {
@@ -282,102 +283,148 @@ class TransporterService : Service() {
                     updateNotification("AA launch failed — is AA installed?")
                 }
 
-                // 7. Wire video pipeline once connected
-                // VideoChannelHandler emits frames → collect and feed to NalStreamManager
-                launch {
-                    // Wait for emulator to be streaming
-                    while (emu.state !is AAHeadUnitEmulator.State.Streaming) {
-                        kotlinx.coroutines.delay(100)
-                    }
+                // 7. Reconnect loop — runs for the lifetime of the pipeline coroutine.
+                //    Each iteration:
+                //      a. Spin up per-session coroutines for heartbeat + media flows.
+                //      b. Call listenAndConnect() — suspends until the read loop exits.
+                //      c. Cancel per-session coroutines, wait RECONNECT_DELAY_MS, retry.
+                var reconnectAttempt = 0
+                while (isActive) {
+                    reconnectAttempt++
+                    if (reconnectAttempt > 1) {
+                        Timber.i("RECONNECT: Attempt #$reconnectAttempt — waiting ${RECONNECT_DELAY_MS}ms")
+                        updateNotification("Reconnecting (attempt $reconnectAttempt)...")
+                        delay(RECONNECT_DELAY_MS)
+                        if (!isActive) break
 
-                    // Start heartbeat
-                    startHeartbeat(config.heartbeatIntervalMs)
-                    Timber.i("Heartbeat started (${config.heartbeatIntervalMs}ms)")
-
-                    // Wire AA video to Ktor web server's video flow (map VideoFrame → ByteArray)
-                    emu.videoHandler?.let { handler ->
-                        // Create a flow that prepends cached codec config + IDR for late subscribers
-                        server.videoFlow = kotlinx.coroutines.flow.flow {
-                            // Emit cached SPS+PPS and IDR first (if available)
-                            handler.cachedCodecConfig?.let {
-                                Timber.i("Emitting cached codec config to new subscriber: ${it.size}b")
-                                emit(it)
-                            }
-                            handler.cachedIdr?.let {
-                                Timber.i("Emitting cached IDR to new subscriber: ${it.size}b")
-                                emit(it)
-                            }
-                            // Then stream live frames
-                            handler.videoFrames.collect { emit(it.data) }
+                        // Re-launch AA so the phone re-initiates the TCP connection.
+                        Timber.i("RECONNECT: Re-launching Android Auto...")
+                        try {
+                            AALauncher.launchWirelessProjection(this@TransporterService)
+                        } catch (e: Exception) {
+                            Timber.w(e, "RECONNECT: Failed to re-launch Android Auto")
                         }
-                        Timber.i("Video flow wired to Ktor web server")
+                        delay(500)
+                        if (!isActive) break
+                    }
 
-                        // Request a keyframe when a new browser client connects
-                        server.onClientConnected = {
-                            Timber.i("Browser client connected, requesting keyframe")
-                            handler.requestKeyframe()
+                    // Per-session child jobs: heartbeat + all media flow collectors.
+                    // These are cancelled as soon as listenAndConnect() returns so that
+                    // dead-socket sends and stale-handler collects stop immediately.
+                    val sessionJob = launch {
+                        // Wait until the emulator reports Streaming before starting flows.
+                        while (emu.state !is AAHeadUnitEmulator.State.Streaming) {
+                            delay(50)
+                            if (!isActive) return@launch
+                        }
+
+                        // Heartbeat
+                        startHeartbeat(config.heartbeatIntervalMs)
+                        Timber.i("SESSION: Heartbeat started (${config.heartbeatIntervalMs}ms)")
+
+                        // Wire AA video to Ktor web server's video flow
+                        launch {
+                            emu.videoHandler?.let { handler ->
+                                server.videoFlow = kotlinx.coroutines.flow.flow {
+                                    handler.cachedCodecConfig?.let {
+                                        Timber.i("Emitting cached codec config to new subscriber: ${it.size}b")
+                                        emit(it)
+                                    }
+                                    handler.cachedIdr?.let {
+                                        Timber.i("Emitting cached IDR to new subscriber: ${it.size}b")
+                                        emit(it)
+                                    }
+                                    handler.videoFrames.collect { emit(it.data) }
+                                }
+                                Timber.i("SESSION: Video flow wired to Ktor web server")
+
+                                server.onClientConnected = {
+                                    Timber.i("Browser client connected, requesting keyframe")
+                                    handler.requestKeyframe()
+                                }
+                            }
+
+                            emu.videoHandler?.videoFrames?.collect { frame ->
+                                isVideoActive = true
+                                controlServer?.sendVideoFrame(frame.data)
+                                nalManager.feedFrame(frame.data, frame.timestamp)
+                            }
+                        }
+
+                        // Wire audio channels → MediaSocketServer
+                        launch {
+                            emu.audioMediaHandler?.audioFrames?.collect { frame ->
+                                audioServer?.sendAudioData(frame.data, shouldBuffer = true)
+                            }
+                        }
+                        launch {
+                            emu.audioSpeechHandler?.audioFrames?.collect { frame ->
+                                audioServer?.sendAudioData(frame.data, shouldBuffer = false)
+                            }
+                        }
+                        launch {
+                            emu.audioSystemHandler?.audioFrames?.collect { frame ->
+                                audioServer?.sendAudioData(frame.data, shouldBuffer = false)
+                            }
                         }
                     }
 
-                    // Collect video frames from AA and relay to browser
-                    emu.videoHandler?.videoFrames?.collect { frame ->
-                        isVideoActive = true
-                        // Send to ControlSocketServer (TaaDa-style direct relay)
-                        controlServer?.sendVideoFrame(frame.data)
-                        // Feed to NalStreamManager for FPS tracking
-                        nalManager.feedFrame(frame.data, frame.timestamp)
+                    // Block until the AA session ends (EOF / IOException / explicit cancel).
+                    Timber.i("RECONNECT: Calling listenAndConnect() (attempt #$reconnectAttempt)")
+                    try {
+                        emu.listenAndConnect()
+                        Timber.i("RECONNECT: listenAndConnect() returned — session ended")
+                    } catch (e: Exception) {
+                        Timber.e(e, "RECONNECT: listenAndConnect() threw unexpectedly")
+                        updateNotification("AA connection error: ${e.message}")
                     }
-                }
 
-                // Wire audio channels → MediaSocketServer
-                launch {
-                    while (emu.state !is AAHeadUnitEmulator.State.Streaming) {
-                        kotlinx.coroutines.delay(100)
+                    // Session is over — cancel per-session work and stop heartbeat.
+                    sessionJob.cancel()
+                    stopHeartbeat()
+                    isConnected = false
+                    isVideoActive = false
+
+                    if (!isActive) {
+                        Timber.i("RECONNECT: Pipeline cancelled — not retrying")
+                        break
                     }
-                    // Media audio (channel 6) — buffered
-                    emu.audioMediaHandler?.audioFrames?.collect { frame ->
-                        audioServer?.sendAudioData(frame.data, shouldBuffer = true)
-                    }
-                }
-                launch {
-                    while (emu.state !is AAHeadUnitEmulator.State.Streaming) {
-                        kotlinx.coroutines.delay(100)
-                    }
-                    // Speech audio (channel 4) — immediate
-                    emu.audioSpeechHandler?.audioFrames?.collect { frame ->
-                        audioServer?.sendAudioData(frame.data, shouldBuffer = false)
-                    }
-                }
-                launch {
-                    while (emu.state !is AAHeadUnitEmulator.State.Streaming) {
-                        kotlinx.coroutines.delay(100)
-                    }
-                    // System audio (channel 5) — immediate
-                    emu.audioSystemHandler?.audioFrames?.collect { frame ->
-                        audioServer?.sendAudioData(frame.data, shouldBuffer = false)
-                    }
+
+                    Timber.i("RECONNECT: Session ended, will retry in ${RECONNECT_DELAY_MS}ms")
                 }
 
             } catch (e: Exception) {
                 Timber.e(e, "TransporterService pipeline failed")
                 updateNotification("Error: ${e.message}")
-                isActive = false
+                Companion.isActive = false
             }
         }
     }
 
     private fun startHeartbeat(intervalMs: Long) {
         stopHeartbeat()
+        Timber.i("HEARTBEAT: Starting (interval=${intervalMs}ms)")
         heartbeatJob = serviceScope.launch(Dispatchers.IO) {
-            while (true) {
-                try {
-                    emulator?.sendHeartbeat()
-                } catch (e: Exception) {
-                    Timber.w(e, "Heartbeat failed")
+            while (isActive) {
+                val emu = emulator
+                if (emu == null) {
+                    Timber.w("HEARTBEAT: No emulator — stopping heartbeat")
                     break
                 }
-                kotlinx.coroutines.delay(intervalMs)
+                val sent = try {
+                    emu.sendHeartbeat()
+                } catch (e: Exception) {
+                    Timber.w(e, "HEARTBEAT: Exception — stopping heartbeat")
+                    false
+                }
+                if (!sent) {
+                    // sendHeartbeat() returned false → not connected; no point continuing.
+                    Timber.w("HEARTBEAT: sendHeartbeat() returned false — stopping heartbeat loop")
+                    break
+                }
+                delay(intervalMs)
             }
+            Timber.i("HEARTBEAT: Loop exited")
         }
     }
 
@@ -396,14 +443,14 @@ class TransporterService : Service() {
                     "RELOAD" -> {
                         nalStreamManager?.toggleVideoFocus(false)
                         serviceScope.launch {
-                            kotlinx.coroutines.delay(100)
+                            delay(100)
                             nalStreamManager?.toggleVideoFocus(true)
                         }
                     }
                     "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
                     "PING" -> {
                         serviceScope.launch {
-                            kotlinx.coroutines.delay(3000)
+                            delay(3000)
                             nalStreamManager?.toggleVideoFocus(true)
                         }
                     }

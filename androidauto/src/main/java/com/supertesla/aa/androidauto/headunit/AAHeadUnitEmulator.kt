@@ -82,6 +82,10 @@ class AAHeadUnitEmulator(
     val state: State get() = _state
     var onStateChanged: ((State) -> Unit)? = null
 
+    /** True only while the read loop is running on a live socket. */
+    val isConnected: Boolean
+        get() = _state is State.Streaming || _state is State.Connected
+
     private fun setState(newState: State) {
         _state = newState
         Timber.i("AAEmulator state: ${newState::class.simpleName}")
@@ -150,13 +154,30 @@ class AAHeadUnitEmulator(
 
             setupChannelHandlers(channelMux)
 
-            // 7. Start read loop (blocks until disconnect)
-            readLoopJob = scope.launch {
-                channelMux.readLoop()
-            }
-
+            // 7. Start read loop and wait for it to finish.
+            //    When the loop ends (EOF, IOException, or explicit cancel) we transition
+            //    state so that observers and the heartbeat know the connection is gone.
             setState(State.Streaming)
             Timber.i("AAEmulator fully connected and streaming")
+
+            readLoopJob = scope.launch {
+                try {
+                    channelMux.readLoop()
+                } finally {
+                    // Read loop ended — connection is gone regardless of the reason.
+                    // Guard against overwriting a deliberate Disconnected transition.
+                    if (_state !is State.Disconnected) {
+                        Timber.w("AA-EMU: Read loop ended — marking connection as lost")
+                        setState(State.Error("Connection lost (read loop ended)"))
+                    }
+                }
+            }
+
+            // Block the suspend function until the read loop exits so that callers
+            // (e.g. a reconnect wrapper in TransporterService) only continue once
+            // the session is fully over.
+            readLoopJob!!.join()
+            Timber.i("AA-EMU: listenAndConnect() returning after read loop exit")
 
         } catch (e: CancellationException) {
             throw e
@@ -389,18 +410,25 @@ class AAHeadUnitEmulator(
 
     /**
      * Send a heartbeat PingRequest to keep the AA connection alive.
-     * Should be called every 2000ms from the TransporterService.
+     * Returns `true` if the ping was dispatched, `false` if the connection is not live
+     * (callers can use the return value to stop the heartbeat loop early).
      */
-    fun sendHeartbeat() {
-        try {
+    fun sendHeartbeat(): Boolean {
+        if (!isConnected) {
+            Timber.w("AA-EMU: sendHeartbeat() skipped — not connected (state=$_state)")
+            return false
+        }
+        return try {
             val timestamp = System.currentTimeMillis()
             // PingRequest protobuf: field 1 (varint) = timestamp
             val payload = com.supertesla.aa.androidauto.proto.ProtoEncoder.encode {
                 writeVarint(1, timestamp)
             }
             mux?.sendEncrypted(ChannelId.CONTROL, MessageType.PING_REQUEST, payload)
+            true
         } catch (e: Exception) {
-            Timber.w(e, "Failed to send heartbeat")
+            Timber.w(e, "AA-EMU: Failed to send heartbeat — connection likely dead")
+            false
         }
     }
 
@@ -433,13 +461,23 @@ class AAHeadUnitEmulator(
     }
 
     /**
-     * Disconnect from the AA server.
+     * Disconnect from the AA session and release all resources.
+     *
+     * Safe to call from any thread. After this returns, [isConnected] is `false`
+     * and [state] is [State.Disconnected].
      */
     fun disconnect() {
-        Timber.i("Disconnecting AAEmulator...")
+        Timber.i("AA-EMU: Disconnecting...")
+
+        // Flip state first so in-flight heartbeat calls see isConnected == false.
+        setState(State.Disconnected)
+
+        // Cancel the read loop before closing the socket to avoid a spurious
+        // IOException being logged from readLoop's finally block.
         readLoopJob?.cancel()
         readLoopJob = null
 
+        // Best-effort graceful shutdown to the phone.
         try {
             mux?.sendEncrypted(ChannelId.CONTROL, MessageType.SHUTDOWN_REQUEST, ByteArray(0))
         } catch (_: Exception) {}
@@ -457,7 +495,7 @@ class AAHeadUnitEmulator(
         audioSystemHandler = null
         audioMediaHandler = null
 
-        setState(State.Disconnected)
+        Timber.i("AA-EMU: Disconnected, all resources released")
     }
 
     fun destroy() {
