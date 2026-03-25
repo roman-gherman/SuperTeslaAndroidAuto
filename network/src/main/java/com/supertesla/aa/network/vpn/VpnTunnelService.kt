@@ -27,9 +27,8 @@ class VpnTunnelService : VpnService() {
             Timber.d("Establishing VPN tunnel with IP: $virtualIp")
             val builder = Builder()
             builder.setSession("SuperTeslaAA")
-            builder.addAddress(virtualIp, 24)
-            builder.addDnsServer("8.8.8.8")
-            builder.addRoute("0.0.0.0", 0)         // Route all traffic
+            builder.addAddress(virtualIp, 32)
+            builder.addRoute(virtualIp, 32)         // Only route the virtual IP, not all traffic
             builder.setMtu(1500)
             builder.setBlocking(false)
 

@@ -20,10 +20,41 @@
     };
 
     function getVideoRect() {
-        // Get the actual video display area (accounting for object-fit: contain letterboxing)
-        var el = document.getElementById('player-video') || document.getElementById('player-canvas');
+        // Get the actual rendered video area, accounting for object-fit:contain letterboxing.
+        var canvas = document.getElementById('player-canvas');
+        var video = document.getElementById('player-video');
+        var el = (canvas && canvas.offsetWidth > 0) ? canvas
+               : (video && video.offsetWidth > 0) ? video
+               : canvas || video;
         if (!el) return null;
-        return el.getBoundingClientRect();
+
+        var rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return rect;
+
+        var videoAspect = DISPLAY_W / DISPLAY_H;
+        var containerAspect = rect.width / rect.height;
+        var renderW, renderH, offsetX, offsetY;
+
+        if (containerAspect > videoAspect) {
+            // Container wider than video — pillarbox (bars on sides)
+            renderH = rect.height;
+            renderW = rect.height * videoAspect;
+            offsetX = (rect.width - renderW) / 2;
+            offsetY = 0;
+        } else {
+            // Container taller than video — letterbox (bars on top/bottom)
+            renderW = rect.width;
+            renderH = rect.width / videoAspect;
+            offsetX = 0;
+            offsetY = (rect.height - renderH) / 2;
+        }
+
+        return {
+            left: rect.left + offsetX,
+            top: rect.top + offsetY,
+            width: renderW,
+            height: renderH
+        };
     }
 
     function normalizeCoords(event) {

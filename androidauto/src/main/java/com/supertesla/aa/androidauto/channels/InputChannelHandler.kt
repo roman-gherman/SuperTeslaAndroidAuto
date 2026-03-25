@@ -39,10 +39,16 @@ class InputChannelHandler(
         }
     }
 
+    private var touchEventCount = 0L
+
     /**
      * Send a single-pointer touch event (backward compat).
      */
     fun sendTouchEvent(action: Int, x: Int, y: Int, pointerId: Int = 0) {
+        touchEventCount++
+        if (touchEventCount <= 5 || touchEventCount % 50 == 0L) {
+            Timber.d("Input: sendTouch #$touchEventCount action=$action x=$x y=$y ptr=$pointerId")
+        }
         sendMultiTouchEvent(action, 0, listOf(TouchPointer(pointerId, x, y)))
     }
 
