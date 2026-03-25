@@ -383,7 +383,7 @@ class TransporterService : Service() {
                 })
                 webServer = server
                 try {
-                    server.start()
+                    server.start("0.0.0.0")
                     Timber.i("PIPELINE: Ktor web server started OK")
                 } catch (e: Exception) {
                     Timber.e(e, "PIPELINE: Ktor web server FAILED to start")

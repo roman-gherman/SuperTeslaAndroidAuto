@@ -9,6 +9,7 @@ import timber.log.Timber
 class VpnTunnelService : VpnService() {
 
     private var tunInterface: ParcelFileDescriptor? = null
+    private var secondaryTunInterface: ParcelFileDescriptor? = null
     private var currentVirtualIp: String? = null
 
     val isEstablished: Boolean
@@ -27,21 +28,42 @@ class VpnTunnelService : VpnService() {
             Timber.d("Establishing VPN tunnel with IP: $virtualIp")
             val builder = Builder()
             builder.setSession("SuperTeslaAA")
-            builder.addAddress(virtualIp, 32)
-            builder.addRoute(virtualIp, 32)         // Only route the virtual IP, not all traffic
+            // === TaaDa dual-VPN trick ===
+            // VPN 1: Dummy VPN that routes all traffic, excludes AA.
+            //         This gets superseded by VPN 2 immediately.
+            builder.addAddress(SECONDARY_VPN_IP, 24)
+            builder.addRoute("0.0.0.0", 0)
+            builder.addDnsServer("8.8.8.8")
             builder.setMtu(1500)
             builder.setBlocking(false)
-
-            // CRITICAL: Exclude Android Auto from VPN to prevent routing loops.
-            // AA connects to localhost:5288 — its traffic must go directly, not through VPN.
             try {
                 builder.addDisallowedApplication(AA_PACKAGE)
-                Timber.d("Excluded $AA_PACKAGE from VPN")
+                Timber.d("VPN1: Excluded $AA_PACKAGE")
             } catch (e: Exception) {
-                Timber.w(e, "Failed to exclude AA package from VPN")
+                Timber.w(e, "VPN1: Failed to exclude AA")
             }
 
             tunInterface = builder.establish()
+            Timber.i("VPN1 established: $SECONDARY_VPN_IP/24 (dummy, will be superseded)")
+
+            // VPN 2: The ACTIVE VPN with the public IP we want reachable.
+            // addAllowedApplication with a non-existent package means no app's
+            // traffic goes through this VPN. This cancels VPN1's traffic
+            // interception while keeping the public IP on an UP interface.
+            try {
+                val builder2 = Builder()
+                builder2.setSession("SuperTeslaAA_2")
+                builder2.addAddress(virtualIp, 24)
+                builder2.addRoute("0.0.0.0", 0)
+                builder2.addDnsServer("8.8.8.8")
+                builder2.setMtu(1500)
+                builder2.setBlocking(false)
+                builder2.addAllowedApplication("android.net.ConnectivityManager")
+                secondaryTunInterface = builder2.establish()
+                Timber.i("VPN2 established: $virtualIp/24 (active, routes nothing — internet restored)")
+            } catch (e: Exception) {
+                Timber.w(e, "VPN2 failed (non-fatal)")
+            }
             currentVirtualIp = if (tunInterface != null) virtualIp else null
 
             if (tunInterface != null) {
@@ -59,11 +81,9 @@ class VpnTunnelService : VpnService() {
 
     fun teardown() {
         Timber.d("Tearing down VPN tunnel")
-        try {
-            tunInterface?.close()
-        } catch (e: Exception) {
-            Timber.w(e, "Error closing TUN interface")
-        }
+        try { secondaryTunInterface?.close() } catch (_: Exception) {}
+        secondaryTunInterface = null
+        try { tunInterface?.close() } catch (_: Exception) {}
         tunInterface = null
         currentVirtualIp = null
     }
@@ -90,5 +110,9 @@ class VpnTunnelService : VpnService() {
     companion object {
         const val EXTRA_VIRTUAL_IP = "extra_virtual_ip"
         const val AA_PACKAGE = "com.google.android.projection.gearhead"
+        const val SECONDARY_VPN_IP = "89.83.67.208"  // TaaDa's secondary VPN IP
+
+        // No excluded packages list needed — the dual-VPN trick
+        // restores internet for all apps automatically.
     }
 }
