@@ -149,6 +149,16 @@ class AAHeadUnitEmulator(
             output.flush()
             Timber.i("AA-EMU: AuthComplete sent (cleartext)")
 
+            // 5b. Disable socket timeout for the read loop phase.
+            //     The 10s timeout was needed during the handshake to avoid blocking
+            //     forever, but during streaming it causes SocketTimeoutException →
+            //     IOException → read loop exit → premature disconnect.
+            //     TaaDa's read loop handles timeouts gracefully (returns empty buffer
+            //     and continues); we take the simpler approach of disabling the timeout
+            //     entirely since the heartbeat handles liveness detection.
+            clientSocket.soTimeout = 0
+            Timber.i("AA-EMU: Socket timeout disabled for read loop phase")
+
             // 6. Create channel mux for encrypted messaging
             val channelMux = ChannelMux(framer, crypto, input, output)
             mux = channelMux

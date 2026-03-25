@@ -7,6 +7,7 @@ import timber.log.Timber
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.SocketTimeoutException
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -26,6 +27,19 @@ class ChannelMux(
 ) {
     private val handlers = mutableMapOf<Int, ChannelHandler>()
 
+    /**
+     * Lock that serialises encrypt-then-write so TLS records arrive in order.
+     *
+     * SSLEngine assigns a monotonic sequence number to each wrap() call.
+     * If two threads encrypt concurrently and the second thread's frame
+     * reaches the wire before the first's, the peer sees an out-of-order
+     * TLS record and fails with BAD_DECRYPT / BAD_RECORD_MAC.
+     *
+     * Holding this single lock across both encrypt() and writeRawFrame()
+     * guarantees the wire order matches the TLS sequence order.
+     */
+    private val sendLock = Any()
+
     // Reassembly buffers per channel
     private val reassemblyBuffers = mutableMapOf<Int, MutableList<ByteArray>>()
 
@@ -42,7 +56,14 @@ class ChannelMux(
         Timber.i("Channel mux read loop started")
         try {
             while (coroutineContext.isActive) {
-                val frame = framer.readFrame(input)
+                val frame = try {
+                    framer.readFrame(input)
+                } catch (e: SocketTimeoutException) {
+                    // TaaDa returns empty buffer and continues on timeout.
+                    // Don't kill the read loop on a transient timeout.
+                    Timber.v("MUX: Socket timeout during readFrame — continuing")
+                    continue
+                }
 
                 // Decrypt payload if encrypted
                 val decryptedPayload = if (frame.isEncrypted && crypto.isHandshakeComplete) {
@@ -97,6 +118,11 @@ class ChannelMux(
                     }
                 }
             }
+        } catch (e: SocketTimeoutException) {
+            // TaaDa's read loop returns empty buffer and continues on timeout.
+            // This should not happen if soTimeout=0, but handle gracefully as a
+            // safety net — log and let the loop end naturally rather than crashing.
+            Timber.w("Channel mux read loop: socket timeout (non-fatal): ${e.message}")
         } catch (e: IOException) {
             Timber.w("Channel mux read loop ended: ${e.message}")
         } catch (e: Exception) {
@@ -133,9 +159,11 @@ class ChannelMux(
         payload[1] = (messageType and 0xFF).toByte()
         System.arraycopy(data, 0, payload, 2, data.size)
 
-        val encrypted = crypto.encrypt(payload)
-        val flags = AapFramer.FLAG_BULK or AapFramer.FLAG_ENCRYPTED
-        framer.writeRawFrame(output, channel, flags, encrypted)
+        synchronized(sendLock) {
+            val encrypted = crypto.encrypt(payload)
+            val flags = AapFramer.FLAG_BULK or AapFramer.FLAG_ENCRYPTED
+            framer.writeRawFrame(output, channel, flags, encrypted)
+        }
     }
 
     /**
@@ -147,9 +175,11 @@ class ChannelMux(
         payload[1] = (messageType and 0xFF).toByte()
         System.arraycopy(data, 0, payload, 2, data.size)
 
-        val encrypted = crypto.encrypt(payload)
-        val flags = AapFramer.FLAG_BULK or AapFramer.FLAG_ENCRYPTED or AapFramer.FLAG_CONTROL
-        framer.writeRawFrame(output, channel, flags, encrypted)
+        synchronized(sendLock) {
+            val encrypted = crypto.encrypt(payload)
+            val flags = AapFramer.FLAG_BULK or AapFramer.FLAG_ENCRYPTED or AapFramer.FLAG_CONTROL
+            framer.writeRawFrame(output, channel, flags, encrypted)
+        }
     }
 
     /**
