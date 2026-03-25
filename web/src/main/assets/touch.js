@@ -167,9 +167,11 @@
         touchpad.addEventListener('touchend', function(e) { e.preventDefault(); }, { passive: false });
         touchpad.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 
-        // Mouse wheel -> vertical swipe gesture
+        // Mouse wheel -> vertical swipe gesture (but NOT pinch-to-zoom)
         touchpad.addEventListener('wheel', function(e) {
             e.preventDefault();
+            // Pinch-to-zoom on macOS sends wheel events with ctrlKey — ignore those
+            if (e.ctrlKey || e.metaKey) return;
             var coords = normalizeCoords(e);
             var deltaY = Math.sign(e.deltaY) * 0.05; // normalize scroll amount
 
@@ -183,10 +185,20 @@
         }, { passive: false });
     }
 
-    // Prevent browser-level gestures
+    // Prevent ALL browser zoom and gesture behaviors
     document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
     document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
     document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+    // Prevent Ctrl+wheel zoom (macOS trackpad pinch-to-zoom)
+    document.addEventListener('wheel', function(e) {
+        if (e.ctrlKey || e.metaKey) e.preventDefault();
+    }, { passive: false });
+    // Prevent Ctrl+plus/minus zoom
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+            e.preventDefault();
+        }
+    });
 
     // Expose for player.js config update
     window.SuperTeslaTouch = window.SuperTeslaTouch || {};

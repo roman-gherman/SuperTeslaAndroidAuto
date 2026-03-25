@@ -28,9 +28,8 @@
     }
 
     function feed(type, pcmBytes) {
-        ensureContext();
-        // Drop audio if context is still suspended (no user gesture yet) to avoid
-        // accumulating a huge backlog that plays all at once when resumed.
+        // Don't create AudioContext until user gesture — avoids browser warning spam
+        if (!ctx) return;
         if (ctx.state === 'suspended') return;
         var config = CONFIGS[type];
         if (!config || pcmBytes.length < 4) return;
