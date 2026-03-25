@@ -123,13 +123,34 @@
         });
     }
 
+    function buildAvcC(sps, pps) {
+        // avcDecoderConfigurationRecord per ISO 14496-15
+        var len = 11 + sps.length + pps.length;
+        var buf = new Uint8Array(len);
+        buf[0] = 1;            // configurationVersion
+        buf[1] = sps[1];       // AVCProfileIndication
+        buf[2] = sps[2];       // profile_compatibility
+        buf[3] = sps[3];       // AVCLevelIndication
+        buf[4] = 0xFF;         // lengthSizeMinusOne=3 | 0xFC reserved bits
+        buf[5] = 0xE1;         // numSPS=1 | 0xE0 reserved bits
+        buf[6] = (sps.length >> 8) & 0xFF;
+        buf[7] = sps.length & 0xFF;
+        buf.set(sps, 8);
+        var off = 8 + sps.length;
+        buf[off] = 1;          // numPPS
+        buf[off + 1] = (pps.length >> 8) & 0xFF;
+        buf[off + 2] = pps.length & 0xFF;
+        buf.set(pps, off + 3);
+        return buf;
+    }
+
     function configureWebCodecsDecoder() {
         if (!cachedSps || !cachedPps) return;
         if (!decoder || decoder.state === 'closed') {
             decoder = createWebCodecsDecoder();
         }
         var codec = codecStringFromSps(cachedSps);
-        var description = buildAnnexBChunk([cachedSps, cachedPps]);
+        var description = buildAvcC(cachedSps, cachedPps);
         try {
             decoder.configure({
                 codec: codec,
@@ -147,9 +168,21 @@
         }
     }
 
+    function wrapAvcc(nalBody) {
+        // 4-byte length prefix (AVCC format) instead of Annex B start code
+        var len = nalBody.length;
+        var out = new Uint8Array(4 + len);
+        out[0] = (len >> 24) & 0xFF;
+        out[1] = (len >> 16) & 0xFF;
+        out[2] = (len >> 8) & 0xFF;
+        out[3] = len & 0xFF;
+        out.set(nalBody, 4);
+        return out;
+    }
+
     function decodeWebCodecsNal(nalBody, type) {
         if (!decoderConfigured || !decoder || decoder.state !== 'configured') return;
-        var data = wrapAnnexB(nalBody);
+        var data = wrapAvcc(nalBody);
         var chunk = new EncodedVideoChunk({
             type: type,
             timestamp: frameTimestamp,

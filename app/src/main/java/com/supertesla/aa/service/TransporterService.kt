@@ -450,15 +450,25 @@ class TransporterService : Service() {
                                 Timber.i("SESSION: Video flow wired to Ktor web server")
 
                                 server.onClientConnected = {
-                                    // Don't request keyframe here — let the browser's START
-                                    // action trigger video focus. This avoids flooding AA
-                                    // with focus messages on every browser reconnect.
+                                    // Forward cached codec config + IDR so late-joining
+                                    // browsers can configure WebCodecs and decode immediately.
+                                    handler.cachedCodecConfig?.let { config ->
+                                        server.videoStreamHandler?.cachedCodecConfig = config
+                                    }
+                                    handler.cachedIdr?.let { idr ->
+                                        server.videoStreamHandler?.cachedIdr = idr
+                                    }
                                     Timber.d("Browser client connected (keyframe will be requested on START)")
                                 }
                             }
 
                             emu.videoHandler?.videoFrames?.collect { frame ->
                                 isVideoActive = true
+                                // Keep the web server's codec config + IDR cache up to date
+                                emu.videoHandler?.let { vh ->
+                                    vh.cachedCodecConfig?.let { server.videoStreamHandler?.cachedCodecConfig = it }
+                                    vh.cachedIdr?.let { server.videoStreamHandler?.cachedIdr = it }
+                                }
                                 controlServer?.sendVideoFrame(frame.data)
                                 nalManager.feedFrame(frame.data, frame.timestamp)
                             }

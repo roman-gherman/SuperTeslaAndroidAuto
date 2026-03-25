@@ -22,6 +22,11 @@ class VideoStreamHandler(
     private val clients = ConcurrentHashMap<String, DefaultWebSocketSession>()
     private val framesSent = AtomicLong(0)
 
+    /** Cached SPS+PPS codec config to send to late-joining clients. */
+    @Volatile var cachedCodecConfig: ByteArray? = null
+    /** Cached IDR (keyframe) — required after codec config for decoder to start. */
+    @Volatile var cachedIdr: ByteArray? = null
+
     companion object {
         private const val TAG = "VideoStreamHandler"
     }
@@ -29,7 +34,8 @@ class VideoStreamHandler(
     /**
      * Collect [videoFlow] and forward every byte array as a binary WebSocket frame.
      *
-     * The function suspends until the flow completes or the session is closed.
+     * If cached codec config (SPS+PPS) is available, it is sent first so
+     * late-joining clients can configure their decoder immediately.
      */
     suspend fun handleClient(session: DefaultWebSocketSession, videoFlow: Flow<ByteArray>) {
         val clientId = java.util.UUID.randomUUID().toString().take(8)
@@ -37,6 +43,17 @@ class VideoStreamHandler(
         Log.i(TAG, "Client connected: $clientId (${width}x${height} @ ${frameRate}fps)")
 
         try {
+            // Send cached codec config (SPS+PPS) + IDR so late-joining clients
+            // can configure their decoder and display a frame immediately.
+            cachedCodecConfig?.let { config ->
+                session.send(Frame.Binary(true, config))
+                Log.i(TAG, "Sent cached codec config to $clientId (${config.size}b)")
+            }
+            cachedIdr?.let { idr ->
+                session.send(Frame.Binary(true, idr))
+                Log.i(TAG, "Sent cached IDR to $clientId (${idr.size}b)")
+            }
+
             videoFlow.collect { nalData ->
                 if (nalData.isNotEmpty()) {
                     session.send(Frame.Binary(true, nalData))
