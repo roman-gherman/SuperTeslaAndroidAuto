@@ -80,7 +80,7 @@ class LocalDnsServerTest {
 
     @Test
     fun `buildDnsResponse contains correct IP bytes`() {
-        val server = LocalDnsServer(virtualIp = "240.3.3.3")
+        val server = LocalDnsServer(virtualIp = "51.75.29.16")
         val method = server.javaClass.getDeclaredMethod("buildDnsResponse", ByteArray::class.java, String::class.java)
         method.isAccessible = true
 
@@ -92,17 +92,17 @@ class LocalDnsServerTest {
         val question = byteArrayOf(5, 's'.code.toByte(), 'u'.code.toByte(), 'p'.code.toByte(), 'e'.code.toByte(), 'r'.code.toByte(),
             3, 't'.code.toByte(), 'a'.code.toByte(), 'a'.code.toByte(), 0, 0, 1, 0, 1)
 
-        val response = method.invoke(server, header + question, "240.3.3.3") as ByteArray
+        val response = method.invoke(server, header + question, "51.75.29.16") as ByteArray
 
         // Transaction ID preserved
         assertEquals(0x12, response[0].toInt() and 0xFF)
         assertEquals(0x34, response[1].toInt() and 0xFF)
 
-        // Response should contain IP bytes 240, 3, 3, 3 near the end
+        // Response should contain IP bytes 51, 75, 29, 16 near the end
         val ipBytes = response.takeLast(4)
-        assertEquals(240.toByte(), ipBytes[0])
-        assertEquals(3.toByte(), ipBytes[1])
-        assertEquals(3.toByte(), ipBytes[2])
-        assertEquals(3.toByte(), ipBytes[3])
+        assertEquals(51.toByte(), ipBytes[0])
+        assertEquals(75.toByte(), ipBytes[1])
+        assertEquals(29.toByte(), ipBytes[2])
+        assertEquals(16.toByte(), ipBytes[3])
     }
 }

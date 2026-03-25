@@ -242,7 +242,7 @@ class TransporterService : Service() {
                     Timber.w(e, "PIPELINE: DuckDNS update failed")
                 }
 
-                // 2c. Start VPN tunnel (creates 240.3.3.3 interface, excludes AA)
+                // 2c. Start VPN tunnel (creates non-RFC1918 interface, excludes AA)
                 if (config.useVpn) {
                     Timber.i("PIPELINE: Step 2c — Starting VPN tunnel")
                     updateNotification("Starting VPN...")

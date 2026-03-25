@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test
 class VpnConfigTest {
 
     @Test
-    fun `virtual IP is 240_3_3_3`() {
-        assertEquals("240.3.3.3", AppConfig.DEFAULT_VIRTUAL_IP)
+    fun `virtual IP is non-RFC1918 routable`() {
+        assertEquals("51.75.29.16", AppConfig.DEFAULT_VIRTUAL_IP)
     }
 
     @Test
@@ -26,11 +26,15 @@ class VpnConfigTest {
     }
 
     @Test
-    fun `virtual IP is in class E range`() {
-        // Class E: 240.0.0.0 - 255.255.255.255
+    fun `virtual IP is not RFC1918 private range`() {
+        // Tesla blocks 10.x, 172.16-31.x, 192.168.x
         val parts = AppConfig.DEFAULT_VIRTUAL_IP.split(".")
         assertEquals(4, parts.size)
-        val firstOctet = parts[0].toInt()
-        assertTrue(firstOctet in 240..255, "First octet should be in Class E range (240-255)")
+        val first = parts[0].toInt()
+        val second = parts[1].toInt()
+        assertFalse(first == 10, "Must not be 10.x.x.x")
+        assertFalse(first == 192 && second == 168, "Must not be 192.168.x.x")
+        assertFalse(first == 172 && second in 16..31, "Must not be 172.16-31.x.x")
+        assertFalse(first in 240..255, "Must not be Class E (240-255)")
     }
 }

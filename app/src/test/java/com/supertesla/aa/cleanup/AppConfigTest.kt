@@ -15,8 +15,8 @@ class AppConfigTest {
     }
 
     @Test
-    fun `DEFAULT_VIRTUAL_IP should be 240_3_3_3`() {
-        assertEquals("240.3.3.3", AppConfig.DEFAULT_VIRTUAL_IP)
+    fun `DEFAULT_VIRTUAL_IP should be non-RFC1918 routable address`() {
+        assertEquals("51.75.29.16", AppConfig.DEFAULT_VIRTUAL_IP)
     }
 
     @Test

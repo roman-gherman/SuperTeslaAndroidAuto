@@ -1,12 +1,18 @@
 package com.supertesla.aa.core.config
 
 object AppConfig {
-    const val DEFAULT_VIRTUAL_IP = "240.3.3.3"
+    /**
+     * VPN virtual IP — must be a routable non-RFC1918 address.
+     * Tesla's browser blocks all private IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+     * and Class E (240.x.x.x). TaaDa uses 51.75.29.16 (OVH range).
+     * This IP is only used locally on the VPN interface — it doesn't actually
+     * route to the internet, so using "someone else's" IP is harmless.
+     */
+    const val DEFAULT_VIRTUAL_IP = "51.75.29.16"
     const val SERVER_PORT = 8080
 
     /**
      * Public domain that resolves to DEFAULT_VIRTUAL_IP via DNS A record.
-     * Set this to your own domain after adding: A record → 240.3.3.3
      * Users type this URL in Tesla's browser instead of an IP address.
      */
     const val PUBLIC_DOMAIN = "supertesla.duckdns.org"
