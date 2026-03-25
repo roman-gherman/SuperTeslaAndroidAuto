@@ -48,7 +48,10 @@ class SensorChannelHandler(
                 when (sensorType) {
                     13 -> sendDrivingStatus()      // DRIVING_STATUS → UNRESTRICTED
                     7  -> sendParkingBrake(true)    // PARKING_BRAKE → always parked
-                    10 -> onNightModeRequested?.invoke()  // NIGHT_MODE → browser will send
+                    10 -> {
+                        sendNightMode(false)        // Default to day mode
+                        onNightModeRequested?.invoke()
+                    }
                     1  -> onLocationRequested?.invoke()    // LOCATION → browser will send GPS
                 }
             }
