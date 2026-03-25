@@ -44,6 +44,11 @@ class WebServer(
     )
     @Volatile var videoFlowReady: Boolean = false
 
+    /** Audio PCM flows — emitted by TransporterService, consumed by WebSocket clients. */
+    val audioMediaFlow = kotlinx.coroutines.flow.MutableSharedFlow<ByteArray>(replay = 0, extraBufferCapacity = 64)
+    val audioSystemFlow = kotlinx.coroutines.flow.MutableSharedFlow<ByteArray>(replay = 0, extraBufferCapacity = 64)
+    val audioSpeechFlow = kotlinx.coroutines.flow.MutableSharedFlow<ByteArray>(replay = 0, extraBufferCapacity = 64)
+
     /** Legacy setter — for MainService screen capture mode. Collects from the given flow into videoSharedFlow. */
     var videoFlow: Flow<ByteArray>?
         get() = if (videoFlowReady) videoSharedFlow else null
@@ -224,6 +229,23 @@ class WebServer(
                         }
                     }
 
+                    // Stream audio PCM to browser (prefixed binary frames)
+                    val audioMediaJob = launch {
+                        audioMediaFlow.collect { pcm ->
+                            try { this@webSocket.send(Frame.Binary(true, VideoStreamHandler.prefixAudio(VideoStreamHandler.TYPE_AUDIO_MEDIA, pcm))) } catch (_: Exception) {}
+                        }
+                    }
+                    val audioSystemJob = launch {
+                        audioSystemFlow.collect { pcm ->
+                            try { this@webSocket.send(Frame.Binary(true, VideoStreamHandler.prefixAudio(VideoStreamHandler.TYPE_AUDIO_SYSTEM, pcm))) } catch (_: Exception) {}
+                        }
+                    }
+                    val audioSpeechJob = launch {
+                        audioSpeechFlow.collect { pcm ->
+                            try { this@webSocket.send(Frame.Binary(true, VideoStreamHandler.prefixAudio(VideoStreamHandler.TYPE_AUDIO_SPEECH, pcm))) } catch (_: Exception) {}
+                        }
+                    }
+
                     // Read incoming messages (touch events) on the main WS coroutine
                     try {
                         for (frame in incoming) {
@@ -251,6 +273,9 @@ class WebServer(
                         }
                     } finally {
                         videoJob.cancel()
+                        audioMediaJob.cancel()
+                        audioSystemJob.cancel()
+                        audioSpeechJob.cancel()
                         Timber.d("WebSocket client disconnected")
                     }
                 }

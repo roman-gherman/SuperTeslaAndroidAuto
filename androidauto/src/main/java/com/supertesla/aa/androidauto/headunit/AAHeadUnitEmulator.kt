@@ -379,7 +379,7 @@ class AAHeadUnitEmulator(
                 bitDepth = config.audioBitDepth,
                 channelCount = config.audioChannels
             ),
-            includeAudioSinks = false  // Match TaaDa default (useBT=true skips 5,7)
+            includeAudioSinks = !config.useBluetooth  // When BT disabled, AA sends audio to us
         )
 
         // Control channel

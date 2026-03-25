@@ -1,124 +1,86 @@
 (function() {
     'use strict';
 
-    var video = document.getElementById('player');
-    var unmuted = false;
-    var volumeSlider = null;
-    var volumeTimeout = null;
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    var ctx = null;
 
-    // Unmute on first user interaction (required by browser autoplay policy)
-    function tryUnmute() {
-        if (unmuted) return;
-        if (!video) {
-            video = document.getElementById('player');
-            if (!video) return;
+    // Audio params per channel type (must match AA ServiceDiscovery)
+    var CONFIGS = {
+        1: { sampleRate: 48000, channels: 2 },  // MEDIA (music)
+        2: { sampleRate: 16000, channels: 1 },   // SPEECH (guidance)
+        3: { sampleRate: 16000, channels: 1 }    // SYSTEM (notifications)
+    };
+
+    // Scheduling state per channel type — chains buffers gaplessly
+    var nextTime = { 1: 0, 2: 0, 3: 0 };
+    var gainNodes = {};
+
+    function ensureContext() {
+        if (!ctx) {
+            ctx = new AudioCtx({ sampleRate: 48000 });
+            // Create gain nodes per channel type
+            for (var t in CONFIGS) {
+                gainNodes[t] = ctx.createGain();
+                gainNodes[t].connect(ctx.destination);
+            }
         }
+        if (ctx.state === 'suspended') ctx.resume();
+    }
 
-        video.muted = false;
-        video.volume = 1.0;
-        unmuted = true;
+    function feed(type, pcmBytes) {
+        ensureContext();
+        // Drop audio if context is still suspended (no user gesture yet) to avoid
+        // accumulating a huge backlog that plays all at once when resumed.
+        if (ctx.state === 'suspended') return;
+        var config = CONFIGS[type];
+        if (!config || pcmBytes.length < 4) return;
 
-        // Resume AudioContext if needed
-        var AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-            var ctx = new AudioCtx();
-            if (ctx.state === 'suspended') {
-                ctx.resume();
+        var sampleCount = Math.floor(pcmBytes.length / 2);
+        var channelCount = config.channels;
+        var framesPerChannel = Math.floor(sampleCount / channelCount);
+        if (framesPerChannel === 0) return;
+
+        var buffer = ctx.createBuffer(channelCount, framesPerChannel, config.sampleRate);
+        var view = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength);
+
+        for (var ch = 0; ch < channelCount; ch++) {
+            var channelData = buffer.getChannelData(ch);
+            for (var i = 0; i < framesPerChannel; i++) {
+                var idx = (i * channelCount + ch) * 2;
+                if (idx + 1 < pcmBytes.length) {
+                    channelData[i] = view.getInt16(idx, true) / 32768.0;
+                }
             }
         }
 
-        showVolumeIndicator();
-        console.log('Audio unmuted');
+        var source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gainNodes[type] || ctx.destination);
+
+        var now = ctx.currentTime;
+        // If we've fallen behind, skip ahead to avoid accumulating latency
+        if (nextTime[type] < now - 0.1) {
+            nextTime[type] = now;
+        }
+        source.start(nextTime[type]);
+        nextTime[type] += buffer.duration;
     }
 
-    function showVolumeIndicator() {
-        // Brief visual indicator that audio is enabled
-        var indicator = document.createElement('div');
-        indicator.id = 'audio-indicator';
-        indicator.textContent = 'Audio ON';
-        indicator.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
-            'background:rgba(0,0,0,0.7);color:#4caf50;padding:8px 20px;border-radius:20px;' +
-            'font-size:14px;z-index:100;transition:opacity 0.5s;pointer-events:none;';
-        document.body.appendChild(indicator);
-
-        setTimeout(function() {
-            indicator.style.opacity = '0';
-            setTimeout(function() { indicator.remove(); }, 500);
-        }, 2000);
-    }
-
-    // Volume control (shown on double-tap or via API)
-    function createVolumeSlider() {
-        if (volumeSlider) return;
-
-        volumeSlider = document.createElement('div');
-        volumeSlider.id = 'volume-control';
-        volumeSlider.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
-            'background:rgba(0,0,0,0.8);padding:12px 20px;border-radius:12px;z-index:90;' +
-            'display:flex;align-items:center;gap:10px;transition:opacity 0.3s;';
-
-        var label = document.createElement('span');
-        label.textContent = 'Vol';
-        label.style.cssText = 'color:#fff;font-size:12px;';
-
-        var slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = '0';
-        slider.max = '100';
-        slider.value = '100';
-        slider.style.cssText = 'width:150px;accent-color:#4fc3f7;';
-        slider.addEventListener('input', function() {
-            if (video) video.volume = parseInt(slider.value) / 100;
-            resetVolumeTimeout();
+    // Resume AudioContext on any user interaction (browser autoplay policy)
+    ['pointerdown', 'keydown', 'click'].forEach(function(evt) {
+        document.addEventListener(evt, function() {
+            ensureContext();
+            if (ctx && ctx.state !== 'running') {
+                console.log('Audio: context state =', ctx.state);
+            }
         });
-
-        volumeSlider.appendChild(label);
-        volumeSlider.appendChild(slider);
-        document.body.appendChild(volumeSlider);
-
-        resetVolumeTimeout();
-    }
-
-    function resetVolumeTimeout() {
-        if (volumeTimeout) clearTimeout(volumeTimeout);
-        if (volumeSlider) volumeSlider.style.opacity = '1';
-        volumeTimeout = setTimeout(function() {
-            if (volumeSlider) {
-                volumeSlider.style.opacity = '0';
-                setTimeout(function() {
-                    if (volumeSlider) { volumeSlider.remove(); volumeSlider = null; }
-                }, 300);
-            }
-        }, 4000);
-    }
-
-    // Listen for first interaction to unmute
-    document.addEventListener('pointerdown', function() {
-        tryUnmute();
-    }, { once: false });
-
-    // Double-tap shows volume control
-    var lastTap = 0;
-    document.addEventListener('pointerdown', function(e) {
-        var now = Date.now();
-        if (now - lastTap < 300) {
-            createVolumeSlider();
-        }
-        lastTap = now;
     });
 
-    // Expose for external control
-    window.SuperTeslaAudio = {
-        unmute: tryUnmute,
-        setVolume: function(v) {
-            if (video) video.volume = Math.max(0, Math.min(1, v));
+    window.SuperTeslaAudioPCM = {
+        feed: feed,
+        setVolume: function(type, vol) {
+            if (gainNodes[type]) gainNodes[type].gain.value = Math.max(0, Math.min(2, vol));
         },
-        getVolume: function() {
-            return video ? video.volume : 0;
-        },
-        isMuted: function() {
-            return video ? video.muted : true;
-        },
-        showVolumeControl: createVolumeSlider
+        getContext: function() { return ctx; }
     };
 })();

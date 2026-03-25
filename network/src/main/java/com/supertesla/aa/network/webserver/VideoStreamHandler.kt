@@ -27,10 +27,6 @@ class VideoStreamHandler(
     /** Cached IDR (keyframe) — required after codec config for decoder to start. */
     @Volatile var cachedIdr: ByteArray? = null
 
-    companion object {
-        private const val TAG = "VideoStreamHandler"
-    }
-
     /**
      * Collect [videoFlow] and forward every byte array as a binary WebSocket frame.
      *
@@ -46,17 +42,17 @@ class VideoStreamHandler(
             // Send cached codec config (SPS+PPS) + IDR so late-joining clients
             // can configure their decoder and display a frame immediately.
             cachedCodecConfig?.let { config ->
-                session.send(Frame.Binary(true, config))
+                session.send(Frame.Binary(true, prefixVideo(config)))
                 Log.i(TAG, "Sent cached codec config to $clientId (${config.size}b)")
             }
             cachedIdr?.let { idr ->
-                session.send(Frame.Binary(true, idr))
+                session.send(Frame.Binary(true, prefixVideo(idr)))
                 Log.i(TAG, "Sent cached IDR to $clientId (${idr.size}b)")
             }
 
             videoFlow.collect { nalData ->
                 if (nalData.isNotEmpty()) {
-                    session.send(Frame.Binary(true, nalData))
+                    session.send(Frame.Binary(true, prefixVideo(nalData)))
                     framesSent.incrementAndGet()
                 }
             }
@@ -79,4 +75,27 @@ class VideoStreamHandler(
 
     val connectedClients: Int get() = clients.size
     val totalFramesSent: Long get() = framesSent.get()
+
+    companion object {
+        private const val TAG = "VideoStreamHandler"
+        const val TYPE_VIDEO: Byte = 0x00
+        const val TYPE_AUDIO_MEDIA: Byte = 0x01
+        const val TYPE_AUDIO_SPEECH: Byte = 0x02
+        const val TYPE_AUDIO_SYSTEM: Byte = 0x03
+
+        /** Prepend type prefix byte to a payload. */
+        fun prefixVideo(data: ByteArray): ByteArray {
+            val out = ByteArray(1 + data.size)
+            out[0] = TYPE_VIDEO
+            System.arraycopy(data, 0, out, 1, data.size)
+            return out
+        }
+
+        fun prefixAudio(type: Byte, data: ByteArray): ByteArray {
+            val out = ByteArray(1 + data.size)
+            out[0] = type
+            System.arraycopy(data, 0, out, 1, data.size)
+            return out
+        }
+    }
 }

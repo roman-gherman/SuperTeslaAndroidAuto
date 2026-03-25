@@ -178,7 +178,7 @@ class TransporterService : Service() {
                     "resolution" to (settingsPrefs.getString("resolution", "720p") ?: "720p"),
                     "dpi" to settingsPrefs.getInt("dpi", 120).toString(),
                     "rhd" to settingsPrefs.getBoolean("rhd", false).toString(),
-                    "usebt" to settingsPrefs.getBoolean("usebt", true).toString(),
+                    "usebt" to settingsPrefs.getBoolean("usebt", false).toString(),
                     "usevpn" to settingsPrefs.getBoolean("usevpn", true).toString()
                 )
                 val config = HeadUnitConfig.fromMap(configMap)
@@ -474,20 +474,23 @@ class TransporterService : Service() {
                             }
                         }
 
-                        // Wire audio channels → MediaSocketServer
+                        // Wire audio channels → legacy MediaSocketServer + Ktor WebServer
                         launch {
                             emu.audioMediaHandler?.audioFrames?.collect { frame ->
                                 audioServer?.sendAudioData(frame.data, shouldBuffer = true)
+                                server.audioMediaFlow.emit(frame.data)
                             }
                         }
                         launch {
                             emu.audioSpeechHandler?.audioFrames?.collect { frame ->
                                 audioServer?.sendAudioData(frame.data, shouldBuffer = false)
+                                server.audioSpeechFlow.emit(frame.data)
                             }
                         }
                         launch {
                             emu.audioSystemHandler?.audioFrames?.collect { frame ->
                                 audioServer?.sendAudioData(frame.data, shouldBuffer = false)
+                                server.audioSystemFlow.emit(frame.data)
                             }
                         }
                     }

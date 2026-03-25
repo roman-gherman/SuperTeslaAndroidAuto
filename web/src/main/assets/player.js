@@ -539,10 +539,21 @@
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
                 reconnectDelay = 1000; // Reset backoff on actual data
-                processBinaryFrame(event.data);
-                // Send ACK after processing video frame (TaaDa flow control)
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ action: 'ACK' }));
+                var raw = new Uint8Array(event.data);
+                var type = raw[0];
+                var payload = raw.subarray(1);
+
+                if (type === 0x00) {
+                    // Video frame (H.264 NAL)
+                    processBinaryFrame(payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength));
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ action: 'ACK' }));
+                    }
+                } else if (type >= 0x01 && type <= 0x03) {
+                    // Audio PCM
+                    if (window.SuperTeslaAudioPCM) {
+                        window.SuperTeslaAudioPCM.feed(type, payload);
+                    }
                 }
             } else {
                 try {
