@@ -32,8 +32,7 @@ import timber.log.Timber
 
 class WebServer(
     private val assetManager: AssetManager,
-    private val port: Int = AppConfig.SERVER_PORT,
-    private val context: android.content.Context? = null
+    private val port: Int = AppConfig.SERVER_PORT
 ) {
     private var server: ApplicationEngine? = null
     private var serverPort80: ApplicationEngine? = null
@@ -74,8 +73,7 @@ class WebServer(
     /** Callback for control actions from browser (START, STOP, ACK, PING, REQUEST_KEYFRAME, etc.) */
     var onAction: ((action: String, json: String) -> Unit)? = null
     var diagnosticInfo: (() -> String)? = null
-    private var nativeProxy: NativeProxyLauncher? = null
-    /** The internal port Ktor actually binds to (public port goes through native proxy). */
+    /** The internal port Ktor actually binds to. */
     var internalPort: Int = 0
         private set
 
@@ -322,12 +320,8 @@ class WebServer(
         }
     }
 
-    // Native proxy is now managed by NativeProxyLauncher
-
     fun stop() {
         Timber.i("Stopping web server")
-        nativeProxy?.stop()
-        nativeProxy = null
         serverPort80?.stop(500, 1000)
         serverPort80 = null
         server?.stop(1000, 2000)

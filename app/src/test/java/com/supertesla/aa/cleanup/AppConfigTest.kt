@@ -15,8 +15,17 @@ class AppConfigTest {
     }
 
     @Test
-    fun `DEFAULT_VIRTUAL_IP should be non-RFC1918 routable address`() {
-        assertEquals("51.75.29.16", AppConfig.DEFAULT_VIRTUAL_IP)
+    fun `RELAY_WSS_URL should point to cloud relay`() {
+        assert(AppConfig.RELAY_WSS_URL.startsWith("wss://")) {
+            "RELAY_WSS_URL should start with wss://"
+        }
+    }
+
+    @Test
+    fun `RELAY_API_URL should point to cloud relay`() {
+        assert(AppConfig.RELAY_API_URL.startsWith("https://")) {
+            "RELAY_API_URL should start with https://"
+        }
     }
 
     @Test

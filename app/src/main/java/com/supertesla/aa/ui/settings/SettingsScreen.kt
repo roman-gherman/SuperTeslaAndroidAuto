@@ -16,7 +16,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
-import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.ui.theme.*
 
 @Composable
@@ -32,8 +31,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     // Driving
     var rightHandDrive by remember { mutableStateOf(prefs.getBoolean("rhd", false)) }
 
-    // Network
-    var useVpn by remember { mutableStateOf(prefs.getBoolean("usevpn", true)) }
+    // Audio
     var useBluetooth by remember { mutableStateOf(prefs.getBoolean("usebt", true)) }
 
     // Advanced
@@ -148,30 +146,6 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            // ===== Network =====
-            SectionHeader("Network")
-            SwitchSetting("Use VPN (recommended)", useVpn) {
-                useVpn = it
-                saveAndNotifyRestart("usevpn", it)
-            }
-
-            // DuckDNS token for automatic domain update
-            var duckDnsToken by remember { mutableStateOf(prefs.getString("duckdns_token", "") ?: "") }
-            TextFieldSetting(
-                label = "DuckDNS Token",
-                value = duckDnsToken,
-                placeholder = "Paste your DuckDNS token",
-                onValueChange = {
-                    duckDnsToken = it
-                    prefs.edit().putString("duckdns_token", it).apply()
-                }
-            )
-            InfoSetting("Domain", AppConfig.PUBLIC_DOMAIN)
-            InfoSetting("VPN IP", AppConfig.DEFAULT_VIRTUAL_IP)
-            InfoSetting("Local DNS", "super.taa")
-
-            Spacer(Modifier.height(16.dp))
-
             // ===== Advanced =====
             SectionHeader("Advanced")
             if (developerMode) {
@@ -213,9 +187,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Text("Version", style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
                 Text("0.1.0", style = MaterialTheme.typography.bodyMedium, color = TeslaGray)
             }
-            InfoSetting("Domain", AppConfig.PUBLIC_DOMAIN)
-            InfoSetting("Fallback URL", AppConfig.getServerUrlFallback())
-            InfoSetting("Hotspot IP", AppConfig.detectedHotspotIp ?: "Not detected")
+            InfoSetting("Hotspot IP", com.supertesla.aa.core.config.AppConfig.detectedHotspotIp ?: "Not detected")
 
             Spacer(Modifier.height(40.dp))
         }

@@ -49,15 +49,6 @@
             android:foregroundServiceType="connectedDevice">
         </service>
 
-        <service
-            android:name="com.supertesla.aa.network.vpn.VpnTunnelService"
-            android:exported="false"
-            android:permission="android.permission.BIND_VPN_SERVICE">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-        </service>
-
         <receiver
             android:name=".receiver.TeslaBluetoothReceiver"
             android:exported="true">

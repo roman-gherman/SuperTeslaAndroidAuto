@@ -16,9 +16,6 @@ import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
 import com.supertesla.aa.androidauto.launcher.AALauncher
 import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.network.hotspot.HotspotManager
-import com.supertesla.aa.network.relay.ControlSocketServer
-import com.supertesla.aa.network.relay.MediaSocketServer
-import com.supertesla.aa.network.vpn.VpnTunnelService
 import com.supertesla.aa.network.webserver.WebServer
 import com.supertesla.aa.network.webserver.VideoStreamHandler
 import com.supertesla.aa.network.websocket.TouchInputRelay
@@ -38,12 +35,10 @@ import timber.log.Timber
  * TransporterService — the core service for AA protocol relay mode.
  *
  * Orchestrates:
- * 1. VPN setup (with AA package exclusion)
- * 2. WebSocket servers for video/audio/voice relay
- * 3. AA protocol: ServerSocket on port 5288, handshake, channel management
- * 4. Video pipeline: AA → NalStreamManager → WebSocket → Tesla browser
- * 5. Touch pipeline: Tesla browser → WebSocket → AA protocol
- * 6. Heartbeat (PingRequest every 2000ms)
+ * 1. AA protocol: ServerSocket on port 5288, handshake, channel management
+ * 2. Video pipeline: AA → NalStreamManager → Ktor WebServer → Cloud Relay → Tesla browser
+ * 3. Touch pipeline: Tesla browser → Cloud Relay → AA protocol
+ * 4. Heartbeat (PingRequest every 2000ms)
  */
 class TransporterService : Service() {
 
@@ -66,6 +61,7 @@ class TransporterService : Service() {
         val isConnectedFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
         val isVideoActiveFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
         val statusText = kotlinx.coroutines.flow.MutableStateFlow("Idle")
+        val teslaUrlFlow = kotlinx.coroutines.flow.MutableStateFlow("")
 
         val hotspotStateFlow = kotlinx.coroutines.flow.MutableStateFlow<com.supertesla.aa.core.model.HotspotState>(
             com.supertesla.aa.core.model.HotspotState.Unknown
@@ -103,15 +99,8 @@ class TransporterService : Service() {
     private var emulator: AAHeadUnitEmulator? = null
     private var nalStreamManager: NalStreamManager? = null
     private var hotspotManager: HotspotManager? = null
-    private var dnsServer: com.supertesla.aa.network.dns.LocalDnsServer? = null
     private var keepaliveWatchdog: com.supertesla.aa.streaming.video.KeepaliveWatchdog? = null
     private val reconnectPolicy = com.supertesla.aa.core.util.ReconnectPolicy()
-
-    // WebSocket servers (3-port architecture like TaaDa)
-    private var controlServer: ControlSocketServer? = null
-    private var audioServer: MediaSocketServer? = null
-    private var voiceServer: MediaSocketServer? = null
-    private var wsBasePort: Int = 0
 
     // Ktor web server (serves HTML player + /ws for video relay)
     private var webServer: WebServer? = null
@@ -178,11 +167,10 @@ class TransporterService : Service() {
                     "resolution" to (settingsPrefs.getString("resolution", "720p") ?: "720p"),
                     "dpi" to settingsPrefs.getInt("dpi", 120).toString(),
                     "rhd" to settingsPrefs.getBoolean("rhd", false).toString(),
-                    "usebt" to settingsPrefs.getBoolean("usebt", false).toString(),
-                    "usevpn" to settingsPrefs.getBoolean("usevpn", false).toString()
+                    "usebt" to settingsPrefs.getBoolean("usebt", false).toString()
                 )
                 val config = HeadUnitConfig.fromMap(configMap)
-                Timber.i("PIPELINE: Config — ${config.videoWidth}x${config.videoHeight} @ ${config.videoDensity}dpi, rhd=${config.rightHandDrive}, bt=${config.useBluetooth}, vpn=${config.useVpn}")
+                Timber.i("PIPELINE: Config — ${config.videoWidth}x${config.videoHeight} @ ${config.videoDensity}dpi, rhd=${config.rightHandDrive}, bt=${config.useBluetooth}")
 
                 // 2. Force-kill any lingering AA car process from previous session
                 Timber.i("PIPELINE: Step 2 — Cleaning up old AA sessions")
@@ -205,73 +193,7 @@ class TransporterService : Service() {
                     Timber.w(e, "Hotspot monitoring failed")
                 }
 
-                // 2b2. Detect IP and update DuckDNS BEFORE VPN (VPN breaks external DNS)
-                try {
-                    val hm = hotspotManager
-                    var phoneIp = hm?.getGatewayIp()
-                    if (phoneIp != null) {
-                        Timber.i("PIPELINE: Hotspot gateway IP: $phoneIp")
-                    } else {
-                        val wm = getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-                        @Suppress("DEPRECATION")
-                        val wifiIp = wm?.connectionInfo?.ipAddress
-                        if (wifiIp != null && wifiIp != 0) {
-                            phoneIp = "${wifiIp and 0xFF}.${(wifiIp shr 8) and 0xFF}.${(wifiIp shr 16) and 0xFF}.${(wifiIp shr 24) and 0xFF}"
-                            Timber.i("PIPELINE: WiFi IP (no hotspot): $phoneIp")
-                        }
-                    }
-                    if (phoneIp != null) {
-                        AppConfig.detectedHotspotIp = phoneIp
-                        val duckDnsToken = settingsPrefs.getString("duckdns_token", null)
-                        if (duckDnsToken != null && duckDnsToken.isNotBlank()) {
-                            // Run synchronously BEFORE VPN starts (VPN breaks DNS)
-                            val ok = com.supertesla.aa.network.dns.DuckDnsUpdater.update(
-                                domain = AppConfig.DUCKDNS_SUBDOMAIN,
-                                token = duckDnsToken,
-                                ip = phoneIp
-                            )
-                            if (ok) {
-                                updateNotification("DNS: ${AppConfig.PUBLIC_DOMAIN} → $phoneIp")
-                                Timber.i("PIPELINE: DuckDNS updated: ${AppConfig.PUBLIC_DOMAIN} -> $phoneIp")
-                            } else {
-                                Timber.w("PIPELINE: DuckDNS update FAILED")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Timber.w(e, "PIPELINE: DuckDNS update failed")
-                }
-
-                // 2c. Start VPN tunnel (creates non-RFC1918 interface, excludes AA)
-                if (config.useVpn) {
-                    Timber.i("PIPELINE: Step 2c — Starting VPN tunnel")
-                    updateNotification("Starting VPN...")
-                    try {
-                        startVpn()
-                        delay(1000)
-                        Timber.i("PIPELINE: VPN started")
-                    } catch (e: Exception) {
-                        Timber.w(e, "PIPELINE: VPN failed (non-fatal, continuing)")
-                    }
-                } else {
-                    Timber.i("PIPELINE: VPN disabled by config")
-                }
-
-                // 2d. Start local DNS server
-                Timber.i("PIPELINE: Step 2d — Starting DNS server")
-                try {
-                    dnsServer = com.supertesla.aa.network.dns.LocalDnsServer(
-                        hostname = "super.taa",
-                        virtualIp = AppConfig.DEFAULT_VIRTUAL_IP
-                    )
-                    dnsServer?.start()
-                    Timber.i("PIPELINE: DNS server started (super.taa -> ${AppConfig.DEFAULT_VIRTUAL_IP})")
-                } catch (e: Exception) {
-                    Timber.w(e, "PIPELINE: DNS server failed (non-fatal)")
-                }
-
-                // 3. Start 3 WebSocket servers
-                // Create keepalive watchdog (3s timeout, disables video focus on browser disconnect)
+                // Create keepalive watchdog (5s timeout, disables video focus on browser disconnect)
                 keepaliveWatchdog = com.supertesla.aa.streaming.video.KeepaliveWatchdog(
                     scope = serviceScope,
                     timeoutMs = 5000L, // 5s timeout (browser PINGs every 2s)
@@ -282,18 +204,8 @@ class TransporterService : Service() {
                     }
                 )
 
-                wsBasePort = (8090 + (Math.random() * 1908).toInt())
-                Timber.i("PIPELINE: Step 3 — Starting WebSocket servers on ports $wsBasePort, ${wsBasePort+1}, ${wsBasePort+2}")
-                updateNotification("Starting WebSocket servers...")
-                try {
-                    startWebSocketServers(wsBasePort)
-                    Timber.i("PIPELINE: WebSocket servers started OK")
-                } catch (e: Exception) {
-                    Timber.e(e, "PIPELINE: WebSocket servers FAILED")
-                }
-
-                // 4. Create core components FIRST (before any server starts accepting connections)
-                Timber.i("PIPELINE: Step 4 — Creating NalStreamManager + AA Emulator")
+                // 3. Create core components FIRST (before any server starts accepting connections)
+                Timber.i("PIPELINE: Step 3 — Creating NalStreamManager + AA Emulator")
                 updateNotification("Initializing AA protocol...")
                 val videoWidth = config.videoWidth
                 val videoHeight = config.videoHeight
@@ -343,11 +255,11 @@ class TransporterService : Service() {
                     }
                 }
 
-                // 5. Start Ktor web server (AFTER core components are created)
-                Timber.i("PIPELINE: Step 5 — Starting Ktor web server on port ${AppConfig.SERVER_PORT}")
+                // 4. Start Ktor web server (AFTER core components are created)
+                Timber.i("PIPELINE: Step 4 — Starting Ktor web server on port ${AppConfig.SERVER_PORT}")
                 updateNotification("Starting web server...")
                 val touchRelay = TouchInputRelay(videoWidth, videoHeight)
-                val server = WebServer(assets, AppConfig.SERVER_PORT, this@TransporterService)
+                val server = WebServer(assets, AppConfig.SERVER_PORT)
                 server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
                 server.touchInputRelay = touchRelay
                 server.configVideoWidth = videoWidth
@@ -392,6 +304,7 @@ class TransporterService : Service() {
                 // --- Cloud Relay for Tesla browser ---
                 val roomManager = com.supertesla.aa.network.relay.RoomManager(this@TransporterService)
                 val teslaUrl = roomManager.getPlayerUrl(AppConfig.PLAYER_BASE_URL)
+                teslaUrlFlow.value = teslaUrl
                 updateNotification("Tesla: $teslaUrl")
                 Timber.i("Tesla URL: $teslaUrl")
 
@@ -492,27 +405,23 @@ class TransporterService : Service() {
                                     vh.cachedCodecConfig?.let { server.videoStreamHandler?.cachedCodecConfig = it }
                                     vh.cachedIdr?.let { server.videoStreamHandler?.cachedIdr = it }
                                 }
-                                controlServer?.sendVideoFrame(frame.data)
                                 nalManager.feedFrame(frame.data, frame.timestamp)
                             }
                         }
 
-                        // Wire audio channels → legacy MediaSocketServer + Ktor WebServer
+                        // Wire audio channels → Ktor WebServer
                         launch {
                             emu.audioMediaHandler?.audioFrames?.collect { frame ->
-                                audioServer?.sendAudioData(frame.data, shouldBuffer = true)
                                 server.audioMediaFlow.emit(frame.data)
                             }
                         }
                         launch {
                             emu.audioSpeechHandler?.audioFrames?.collect { frame ->
-                                audioServer?.sendAudioData(frame.data, shouldBuffer = false)
                                 server.audioSpeechFlow.emit(frame.data)
                             }
                         }
                         launch {
                             emu.audioSystemHandler?.audioFrames?.collect { frame ->
-                                audioServer?.sendAudioData(frame.data, shouldBuffer = false)
                                 server.audioSystemFlow.emit(frame.data)
                             }
                         }
@@ -600,75 +509,6 @@ class TransporterService : Service() {
         heartbeatJob = null
     }
 
-    private fun startWebSocketServers(basePort: Int) {
-        val ctrl = ControlSocketServer(
-            port = basePort,
-            onAction = { action, json ->
-                when (action) {
-                    "START" -> nalStreamManager?.toggleVideoFocus(true)
-                    "STOP", "DISCONNECTED" -> nalStreamManager?.toggleVideoFocus(false)
-                    "RELOAD" -> {
-                        nalStreamManager?.toggleVideoFocus(false)
-                        serviceScope.launch {
-                            delay(100)
-                            nalStreamManager?.toggleVideoFocus(true)
-                        }
-                    }
-                    "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
-                    "PING" -> {
-                        // Reset keepalive watchdog on each PING
-                        keepaliveWatchdog?.reset()
-                    }
-                    "ACK" -> {
-                        // Forward video ACK to AA protocol
-                        emulator?.videoHandler?.sendAck()
-                    }
-                    "CONNECTED" -> {
-                        // Browser connected — start keepalive watchdog
-                        Timber.i("Browser client connected on port $basePort")
-                        keepaliveWatchdog?.start()
-                    }
-                }
-            },
-            onTouch = { action, x, y, pointerId ->
-                // Forward touch events directly to AA protocol
-                emulator?.inputHandler?.sendTouchEvent(action, x, y, pointerId)
-            }
-        )
-        ctrl.isReuseAddr = true
-        ctrl.start()
-        controlServer = ctrl
-        Timber.i("ControlSocketServer started on port $basePort")
-
-        val audio = MediaSocketServer(basePort + 1, "AudioSocket")
-        audio.isReuseAddr = true
-        audio.start()
-        audioServer = audio
-        Timber.i("AudioSocketServer started on port ${basePort + 1}")
-
-        val voice = MediaSocketServer(basePort + 2, "VoiceSocket")
-        voice.isReuseAddr = true
-        voice.start()
-        voiceServer = voice
-        Timber.i("VoiceSocketServer started on port ${basePort + 2}")
-    }
-
-    private fun stopWebSocketServers() {
-        try { controlServer?.stop(1000) } catch (_: Exception) {}
-        controlServer = null
-        try { audioServer?.stop(1000) } catch (_: Exception) {}
-        audioServer = null
-        try { voiceServer?.stop(1000) } catch (_: Exception) {}
-        voiceServer = null
-    }
-
-    private fun startVpn() {
-        val vpnIntent = Intent(this, VpnTunnelService::class.java).apply {
-            putExtra(VpnTunnelService.EXTRA_VIRTUAL_IP, AppConfig.DEFAULT_VIRTUAL_IP)
-        }
-        startService(vpnIntent)
-    }
-
     private fun acquireLocks() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
@@ -727,32 +567,9 @@ class TransporterService : Service() {
             }.start()
         }
 
-        // Notify WebSocket clients of shutdown (TaaDa sends server_shutdown JSON)
-        try {
-            val ctrl = controlServer
-            if (ctrl != null) {
-                val notifier = com.supertesla.aa.core.util.ShutdownNotifier(
-                    broadcast = { msg -> ctrl.broadcast(msg) }
-                )
-                kotlinx.coroutines.runBlocking { notifier.notifyAndDrain() }
-            }
-        } catch (_: Exception) {}
-
-        // Stop WebSocket servers
-        try { stopWebSocketServers() } catch (_: Exception) {}
-
         // Cancel keepalive watchdog
         try { keepaliveWatchdog?.cancel() } catch (_: Exception) {}
         keepaliveWatchdog = null
-
-        // Stop DNS server
-        try { dnsServer?.stop() } catch (_: Exception) {}
-        dnsServer = null
-
-        // Stop VPN
-        try {
-            stopService(Intent(this, VpnTunnelService::class.java))
-        } catch (_: Exception) {}
 
         // Release locks
         try { releaseLocks() } catch (_: Exception) {}

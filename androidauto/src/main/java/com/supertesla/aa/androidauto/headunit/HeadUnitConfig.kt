@@ -24,8 +24,7 @@ data class HeadUnitConfig(
 
     // User preferences
     val rightHandDrive: Boolean = false,
-    val useBluetooth: Boolean = true,
-    val useVpn: Boolean = true
+    val useBluetooth: Boolean = true
 ) {
     companion object {
         const val AA_LISTEN_PORT = 5288
@@ -59,15 +58,13 @@ data class HeadUnitConfig(
             val dpi = (prefs["dpi"]?.toIntOrNull() ?: 120).coerceIn(100, 300)
             val rhd = prefs["rhd"]?.toBooleanStrictOrNull() ?: false
             val useBt = prefs["usebt"]?.toBooleanStrictOrNull() ?: true
-            val useVpn = prefs["usevpn"]?.toBooleanStrictOrNull() ?: true
 
             return HeadUnitConfig(
                 videoWidth = w,
                 videoHeight = h,
                 videoDensity = dpi,
                 rightHandDrive = rhd,
-                useBluetooth = useBt,
-                useVpn = useVpn
+                useBluetooth = useBt
             )
         }
     }

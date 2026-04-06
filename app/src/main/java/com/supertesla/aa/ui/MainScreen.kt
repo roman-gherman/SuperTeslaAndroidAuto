@@ -2,7 +2,6 @@ package com.supertesla.aa.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.net.VpnService
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,22 +44,16 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
     val serviceVideoActive by TransporterService.isVideoActiveFlow.collectAsStateWithLifecycle()
     val serviceStatus by TransporterService.statusText.collectAsStateWithLifecycle()
     val hotspotState by TransporterService.hotspotStateFlow.collectAsStateWithLifecycle()
+    val teslaUrl by TransporterService.teslaUrlFlow.collectAsStateWithLifecycle()
 
     val isRunning = serviceActive || appState.isRunning
 
-    var vpnPermissionGranted by remember { mutableStateOf(false) }
-
-    val vpnLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { _ ->
-        vpnPermissionGranted = true
-        TransporterService.start(context)
-    }
+    // No VPN needed — relay mode connects outbound
 
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ ->
-        requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
+        TransporterService.start(context)
     }
 
     Surface(
@@ -112,9 +105,9 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
 
             Spacer(Modifier.height(36.dp))
 
-            // URL card (prominent when running)
-            if (isRunning) {
-                UrlCard(url = AppConfig.getServerUrlFallback())
+            // Tesla URL card (prominent when running)
+            if (isRunning && teslaUrl.isNotEmpty()) {
+                UrlCard(url = teslaUrl)
                 Spacer(Modifier.height(12.dp))
                 // Status text from service
                 if (serviceActive) {
@@ -193,7 +186,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
                         ) {
                             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else {
-                            requestVpnAndStart(context, vpnLauncher) { vpnPermissionGranted = true }
+                            TransporterService.start(context)
                         }
                     }
                 },
@@ -290,6 +283,10 @@ private fun StatusRow(label: String, isActive: Boolean, detail: String) {
 
 @Composable
 private fun UrlCard(url: String) {
+    val context = LocalContext.current
+    val clipboardManager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    var copied by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = TeslaPrimaryContainer),
@@ -306,21 +303,35 @@ private fun UrlCard(url: String) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = TeslaGray
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
+            // Show just the short path for easy reading
+            val shortUrl = url.substringAfter("//").let {
+                if (it.length > 40) "...${it.takeLast(30)}" else it
+            }
             Text(
-                text = AppConfig.PUBLIC_DOMAIN,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                text = shortUrl,
+                fontSize = 14.sp,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
-                color = TeslaBlue
+                color = TeslaBlue.copy(alpha = 0.8f)
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "or: ${AppConfig.getServerUrlFallback()}",
-                style = MaterialTheme.typography.labelSmall,
-                color = TeslaDimText
-            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    clipboardManager.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Tesla URL", url)
+                    )
+                    copied = true
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TeslaBlue),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Text(
+                    text = if (copied) "Copied!" else "Copy URL",
+                    color = TeslaDark,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -348,16 +359,4 @@ private fun ErrorCard(error: AppState.Error) {
     }
 }
 
-private fun requestVpnAndStart(
-    context: android.content.Context,
-    vpnLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>,
-    onAlreadyGranted: () -> Unit
-) {
-    val prepareIntent = VpnService.prepare(context)
-    if (prepareIntent != null) {
-        vpnLauncher.launch(prepareIntent)
-    } else {
-        onAlreadyGranted()
-        TransporterService.start(context)
-    }
-}
+// VPN removed — relay mode doesn't need VPN permission

@@ -13,7 +13,6 @@ class HeadUnitConfigFromPrefsTest {
         assertEquals(120, config.videoDensity)
         assertFalse(config.rightHandDrive)
         assertTrue(config.useBluetooth)
-        assertTrue(config.useVpn)
     }
 
     @Test
@@ -53,11 +52,6 @@ class HeadUnitConfigFromPrefsTest {
     @Test
     fun `fromMap reads usebt flag`() {
         assertFalse(HeadUnitConfig.fromMap(mapOf("usebt" to "false")).useBluetooth)
-    }
-
-    @Test
-    fun `fromMap reads usevpn flag`() {
-        assertFalse(HeadUnitConfig.fromMap(mapOf("usevpn" to "false")).useVpn)
     }
 
     @Test

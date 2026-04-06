@@ -308,8 +308,7 @@ private fun BluetoothAudioPage(context: android.content.Context) {
 
 @Composable
 private fun ConnectTeslaPage() {
-    val primaryUrl = AppConfig.getServerUrl()
-    val fallbackUrl = AppConfig.getServerUrlFallback()
+    val playerUrl = AppConfig.PLAYER_BASE_URL
 
     WizardPage(
         title = "Open in Tesla",
@@ -327,11 +326,11 @@ private fun ConnectTeslaPage() {
             shape = MaterialTheme.shapes.large
         ) {
             Text(
-                text = AppConfig.PUBLIC_DOMAIN,
+                text = playerUrl,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 28.dp, vertical = 20.dp),
-                fontSize = 30.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.Center,
@@ -340,7 +339,7 @@ private fun ConnectTeslaPage() {
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "or: $fallbackUrl",
+            text = "(Cloud relay — no VPN needed)",
             style = MaterialTheme.typography.labelMedium,
             color = TeslaDimText
         )
