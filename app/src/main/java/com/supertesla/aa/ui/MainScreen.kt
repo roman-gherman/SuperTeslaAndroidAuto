@@ -45,6 +45,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
     val serviceStatus by TransporterService.statusText.collectAsStateWithLifecycle()
     val hotspotState by TransporterService.hotspotStateFlow.collectAsStateWithLifecycle()
     val teslaUrl by TransporterService.teslaUrlFlow.collectAsStateWithLifecycle()
+    val approvalPending by TransporterService.approvalPendingFlow.collectAsStateWithLifecycle()
 
     val isRunning = serviceActive || appState.isRunning
 
@@ -104,6 +105,12 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
             )
 
             Spacer(Modifier.height(36.dp))
+
+            // Tesla approval request (shown when Tesla is waiting)
+            if (approvalPending) {
+                ApprovalCard(context = context)
+                Spacer(Modifier.height(12.dp))
+            }
 
             // Tesla URL card (prominent when running)
             if (isRunning && teslaUrl.isNotEmpty()) {
@@ -359,4 +366,54 @@ private fun ErrorCard(error: AppState.Error) {
     }
 }
 
-// VPN removed — relay mode doesn't need VPN permission
+@Composable
+private fun ApprovalCard(context: android.content.Context) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = TeslaBlue.copy(alpha = 0.15f)),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Tesla wants to connect",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TeslaBlue
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+            ) {
+                Button(
+                    onClick = {
+                        context.startService(
+                            android.content.Intent(context, TransporterService::class.java)
+                                .apply { action = TransporterService.ACTION_APPROVE_TESLA }
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TeslaBlue),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Allow", color = TeslaDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                OutlinedButton(
+                    onClick = {
+                        context.startService(
+                            android.content.Intent(context, TransporterService::class.java)
+                                .apply { action = TransporterService.ACTION_DENY_TESLA }
+                        )
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Deny", fontSize = 16.sp)
+                }
+            }
+        }
+    }
+}

@@ -65,6 +65,8 @@ class TransporterService : Service() {
         val isVideoActiveFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
         val statusText = kotlinx.coroutines.flow.MutableStateFlow("Idle")
         val teslaUrlFlow = kotlinx.coroutines.flow.MutableStateFlow("")
+        /** True when Tesla is waiting for approval */
+        val approvalPendingFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
 
         val hotspotStateFlow = kotlinx.coroutines.flow.MutableStateFlow<com.supertesla.aa.core.model.HotspotState>(
             com.supertesla.aa.core.model.HotspotState.Unknown
@@ -134,12 +136,14 @@ class TransporterService : Service() {
             }
             ACTION_APPROVE_TESLA -> {
                 Timber.i("User approved Tesla connection")
+                approvalPendingFlow.value = false
                 relayClient?.approveConnection()
                 dismissApprovalNotification()
                 return START_STICKY
             }
             ACTION_DENY_TESLA -> {
                 Timber.i("User denied Tesla connection")
+                approvalPendingFlow.value = false
                 relayClient?.denyConnection()
                 dismissApprovalNotification()
                 return START_STICKY
@@ -341,8 +345,11 @@ class TransporterService : Service() {
                     touchRelay = touchRelay,
                     onAction = server.onAction,
                     onApprovalRequest = { _ ->
-                        Timber.i("RELAY: Tesla requesting approval — showing notification")
-                        showApprovalNotification()
+                        if (!approvalPendingFlow.value) {
+                            Timber.i("RELAY: Tesla requesting approval — showing notification")
+                            approvalPendingFlow.value = true
+                            showApprovalNotification()
+                        }
                     }
                 )
                 this@TransporterService.relayClient = relayClient
