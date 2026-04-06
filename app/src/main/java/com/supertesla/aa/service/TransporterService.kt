@@ -179,7 +179,7 @@ class TransporterService : Service() {
                     "dpi" to settingsPrefs.getInt("dpi", 120).toString(),
                     "rhd" to settingsPrefs.getBoolean("rhd", false).toString(),
                     "usebt" to settingsPrefs.getBoolean("usebt", false).toString(),
-                    "usevpn" to settingsPrefs.getBoolean("usevpn", true).toString()
+                    "usevpn" to settingsPrefs.getBoolean("usevpn", false).toString()
                 )
                 val config = HeadUnitConfig.fromMap(configMap)
                 Timber.i("PIPELINE: Config — ${config.videoWidth}x${config.videoHeight} @ ${config.videoDensity}dpi, rhd=${config.rightHandDrive}, bt=${config.useBluetooth}, vpn=${config.useVpn}")
@@ -347,7 +347,7 @@ class TransporterService : Service() {
                 Timber.i("PIPELINE: Step 5 — Starting Ktor web server on port ${AppConfig.SERVER_PORT}")
                 updateNotification("Starting web server...")
                 val touchRelay = TouchInputRelay(videoWidth, videoHeight)
-                val server = WebServer(assets, AppConfig.SERVER_PORT)
+                val server = WebServer(assets, AppConfig.SERVER_PORT, this@TransporterService)
                 server.videoStreamHandler = VideoStreamHandler(videoWidth, videoHeight, 30)
                 server.touchInputRelay = touchRelay
                 server.configVideoWidth = videoWidth
@@ -384,14 +384,16 @@ class TransporterService : Service() {
                 webServer = server
                 try {
                     server.start("0.0.0.0")
-                    Timber.i("PIPELINE: Ktor web server started OK")
+                    Timber.i("PIPELINE: Ktor web server started OK (internal port ${server.internalPort})")
                 } catch (e: Exception) {
                     Timber.e(e, "PIPELINE: Ktor web server FAILED to start")
                 }
 
-                val serverUrl = AppConfig.getServerUrlFallback()
-                updateNotification("Server ready: $serverUrl")
-                Timber.i("Web server accessible at $serverUrl")
+                // Show the hotspot IP URL (what Tesla should navigate to)
+                val hotspotIp = AppConfig.detectedHotspotIp
+                val teslaUrl = if (hotspotIp != null) "http://$hotspotIp:${AppConfig.SERVER_PORT}" else "unknown"
+                updateNotification("Tesla: $teslaUrl")
+                Timber.i("Tesla URL: $teslaUrl (proxy on :${AppConfig.SERVER_PORT} → Ktor on :${server.internalPort})")
 
                 // Give the server socket a moment to start, then launch AA once.
                 delay(500)

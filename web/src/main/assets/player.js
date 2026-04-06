@@ -511,7 +511,8 @@
 
     // ---- WebSocket connection ----
     function connect() {
-        var url = 'ws://' + serverHost + '/ws';
+        var wsProto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+        var url = wsProto + serverHost + '/ws';
         setStatus('buffering', mode.toUpperCase() + ': Connecting to ' + serverHost + '...');
 
         try { ws = new WebSocket(url); } catch (e) {

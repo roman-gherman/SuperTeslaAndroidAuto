@@ -32,7 +32,8 @@ import timber.log.Timber
 
 class WebServer(
     private val assetManager: AssetManager,
-    private val port: Int = AppConfig.SERVER_PORT
+    private val port: Int = AppConfig.SERVER_PORT,
+    private val context: android.content.Context? = null
 ) {
     private var server: ApplicationEngine? = null
     private var serverPort80: ApplicationEngine? = null
@@ -73,6 +74,10 @@ class WebServer(
     /** Callback for control actions from browser (START, STOP, ACK, PING, REQUEST_KEYFRAME, etc.) */
     var onAction: ((action: String, json: String) -> Unit)? = null
     var diagnosticInfo: (() -> String)? = null
+    private var nativeProxy: NativeProxyLauncher? = null
+    /** The internal port Ktor actually binds to (public port goes through native proxy). */
+    var internalPort: Int = 0
+        private set
 
     val isRunning: Boolean
         get() = server != null
@@ -85,7 +90,10 @@ class WebServer(
 
         Timber.i("Starting web server on $bindAddress:$port")
 
-        server = embeddedServer(Netty, port = port, host = bindAddress) {
+        // Bind to all interfaces on the public port. IPv6 dual-stack sockets
+        // ARE reachable from hotspot clients (proven via nc test).
+        val internalPort = port
+        server = embeddedServer(Netty, port = port, host = "0.0.0.0") {
             install(WebSockets) {
                 pingPeriodMillis = 15000
                 timeoutMillis = 30000
@@ -282,7 +290,8 @@ class WebServer(
             }
         }.start(wait = false)
 
-        Timber.i("Web server started on 127.0.0.1:$port")
+        this.internalPort = internalPort
+        Timber.i("Web server started on 0.0.0.0:$port")
 
         // Also listen on port 80 so domain works without :8080 (e.g., app.supertesla.top)
         if (port != 80) {
@@ -313,71 +322,12 @@ class WebServer(
         }
     }
 
-    private var proxyThread: Thread? = null
-    private var proxySocket: java.net.ServerSocket? = null
-
-    /**
-     * Start a true IPv4 (AF_INET) TCP proxy that forwards to the Ktor server on localhost.
-     * Android 16 forces all Java ServerSocket to IPv6 dual-stack (AF_INET6), which the
-     * hotspot iptables cannot forward from external clients. Using ServerSocketChannel
-     * with StandardProtocolFamily.INET creates a real AF_INET socket.
-     */
-    private fun startIpv4Proxy(bindAddress: String, targetPort: Int) {
-        proxyThread = Thread({
-            try {
-                // Create true AF_INET (IPv4) socket using Android's Os API.
-                // Android 16 forces all Java ServerSocket to IPv6 dual-stack,
-                // which hotspot iptables cannot forward from external clients.
-                val fd = android.system.Os.socket(
-                    android.system.OsConstants.AF_INET,
-                    android.system.OsConstants.SOCK_STREAM,
-                    0
-                )
-                android.system.Os.setsockoptInt(fd, android.system.OsConstants.SOL_SOCKET,
-                    android.system.OsConstants.SO_REUSEADDR, 1)
-                android.system.Os.bind(fd, java.net.InetAddress.getByName(bindAddress), targetPort)
-                android.system.Os.listen(fd, 50)
-                proxyFd = fd
-                Timber.i("IPv4 proxy: AF_INET socket created via Os.socket()")
-                Timber.i("IPv4 proxy started on $bindAddress:$targetPort → 127.0.0.1:$targetPort")
-                while (!Thread.interrupted()) {
-                    val peerAddr = java.net.InetSocketAddress(0)
-                    val clientFd = android.system.Os.accept(fd, peerAddr)
-                    // Wrap the accepted fd into streams for the proxy
-                    val clientIn = java.io.FileInputStream(clientFd)
-                    val clientOut = java.io.FileOutputStream(clientFd)
-                    Thread {
-                        try {
-                            val backend = java.net.Socket("127.0.0.1", targetPort)
-                            val t1 = Thread { try { clientIn.copyTo(backend.getOutputStream()); backend.shutdownOutput() } catch (_: Exception) {} }
-                            val t2 = Thread { try { backend.getInputStream().copyTo(clientOut); } catch (_: Exception) {} }
-                            t1.isDaemon = true; t2.isDaemon = true
-                            t1.start(); t2.start()
-                            t1.join(); t2.join()
-                            try { clientIn.close() } catch (_: Exception) {}
-                            try { clientOut.close() } catch (_: Exception) {}
-                            try { android.system.Os.close(clientFd) } catch (_: Exception) {}
-                            backend.close()
-                        } catch (_: Exception) {
-                            try { android.system.Os.close(clientFd) } catch (_: Exception) {}
-                        }
-                    }.apply { isDaemon = true; start() }
-                }
-            } catch (e: java.net.BindException) {
-                Timber.w("IPv4 proxy: port $targetPort already in use on $bindAddress — external access may not work")
-            } catch (e: Exception) {
-                if (!Thread.interrupted()) Timber.w(e, "IPv4 proxy stopped")
-            }
-        }, "ipv4-proxy").apply { isDaemon = true; start() }
-    }
-
-    private var proxyFd: java.io.FileDescriptor? = null
+    // Native proxy is now managed by NativeProxyLauncher
 
     fun stop() {
         Timber.i("Stopping web server")
-        try { proxyFd?.let { android.system.Os.close(it) } } catch (_: Exception) {}
-        proxyThread?.interrupt()
-        proxyThread = null; proxySocket = null; proxyFd = null
+        nativeProxy?.stop()
+        nativeProxy = null
         serverPort80?.stop(500, 1000)
         serverPort80 = null
         server?.stop(1000, 2000)
