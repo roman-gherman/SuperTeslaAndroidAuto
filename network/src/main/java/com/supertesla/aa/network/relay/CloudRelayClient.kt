@@ -67,6 +67,12 @@ class CloudRelayClient(
         val latch = CompletableDeferred<Unit>()
 
         val ws = object : WebSocketClient(uri) {
+            init {
+                // Use default SSLSocketFactory — it handles IPv4/IPv6 fallback correctly
+                // (unlike raw Socket() which creates IPv6 dual-stack that times out)
+                this.setSocketFactory(javax.net.ssl.HttpsURLConnection.getDefaultSSLSocketFactory())
+                this.connectionLostTimeout = 30
+            }
             override fun onOpen(handshake: ServerHandshake?) {
                 Timber.i("Relay: connected to room $roomId")
                 isConnected = true
