@@ -48,14 +48,15 @@ class CloudRelayClient(
             while (isActive) {
                 try {
                     doConnect()
-                    delay = 2000L // Reset on successful connect
+                    delay = 500L // Reset on successful connect
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     Timber.w("Relay: connection failed: ${e.message}")
                 }
                 delay(delay)
-                delay = (delay * 1.5).toLong().coerceAtMost(30000L)
+                // Aggressive reconnect: 500ms → 1s → 2s → 3s max
+                delay = (delay * 2).coerceAtMost(3000L)
             }
         }
     }

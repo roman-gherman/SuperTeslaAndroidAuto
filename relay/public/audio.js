@@ -13,14 +13,19 @@
 
     var gainNodes = {};
 
-    // Jitter buffer: schedule audio slightly ahead to absorb network jitter.
-    // BUFFER_AHEAD_MS is how far ahead we schedule. Higher = more resilient, more latency.
-    var BUFFER_AHEAD_MS = 80;  // 80ms jitter buffer
-    var MAX_DRIFT_MS = 200;    // If scheduled time drifts >200ms ahead, reset
+    // Jitter buffer: schedule audio ahead to absorb network jitter.
+    // Starts at 150ms, temporarily increases to 300ms after a gap (reconnect).
+    var BUFFER_AHEAD_MS = 150;
+    var BUFFER_AHEAD_RECOVERY_MS = 300;  // Larger buffer right after a gap
+    var MAX_DRIFT_MS = 500;              // Reset if scheduled too far ahead
+    var GAP_THRESHOLD_MS = 100;          // If chunk arrives >100ms late, it's a gap
 
     // Per-channel scheduling state
     var nextTime = { 1: 0, 2: 0, 3: 0 };
     var chunkCount = { 1: 0, 2: 0, 3: 0 };
+    var lastFeedTime = { 1: 0, 2: 0, 3: 0 };
+    var inRecovery = { 1: false, 2: false, 3: false };
+    var recoveryChunks = { 1: 0, 2: 0, 3: 0 };
 
     function ensureContext() {
         if (!ctx) {
@@ -63,20 +68,35 @@
         source.connect(gainNodes[type] || ctx.destination);
 
         var now = ctx.currentTime;
-        var bufferAhead = BUFFER_AHEAD_MS / 1000;
+        var wallNow = Date.now();
 
-        // Initialize scheduling on first chunk
+        // Detect gap (network reconnect, long pause)
+        if (lastFeedTime[type] > 0 && (wallNow - lastFeedTime[type]) > GAP_THRESHOLD_MS) {
+            inRecovery[type] = true;
+            recoveryChunks[type] = 0;
+        }
+        lastFeedTime[type] = wallNow;
+
+        // Use larger buffer during recovery (first 20 chunks after gap)
+        var bufferAhead = inRecovery[type] ? BUFFER_AHEAD_RECOVERY_MS / 1000 : BUFFER_AHEAD_MS / 1000;
+        if (inRecovery[type]) {
+            recoveryChunks[type]++;
+            if (recoveryChunks[type] > 20) {
+                inRecovery[type] = false;  // Back to normal buffer size
+            }
+        }
+
+        // Initialize or reset scheduling
         if (nextTime[type] === 0 || chunkCount[type] === 0) {
             nextTime[type] = now + bufferAhead;
         }
 
-        // If we've fallen behind (network delay), catch up
+        // Fallen behind — reset with current buffer ahead
         if (nextTime[type] < now) {
-            // Drop this chunk silently — we're behind, skip to stay in sync
             nextTime[type] = now + bufferAhead;
         }
 
-        // If we're too far ahead (buffered too much), reset
+        // Too far ahead — reset to prevent growing latency
         if (nextTime[type] > now + MAX_DRIFT_MS / 1000) {
             nextTime[type] = now + bufferAhead;
         }
