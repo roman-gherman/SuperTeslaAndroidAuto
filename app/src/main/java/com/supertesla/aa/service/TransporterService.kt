@@ -389,11 +389,32 @@ class TransporterService : Service() {
                     Timber.e(e, "PIPELINE: Ktor web server FAILED to start")
                 }
 
-                // Show the hotspot IP URL (what Tesla should navigate to)
-                val hotspotIp = AppConfig.detectedHotspotIp
-                val teslaUrl = if (hotspotIp != null) "http://$hotspotIp:${AppConfig.SERVER_PORT}" else "unknown"
+                // --- Cloud Relay for Tesla browser ---
+                val roomManager = com.supertesla.aa.network.relay.RoomManager(this@TransporterService)
+                val teslaUrl = roomManager.getPlayerUrl(AppConfig.PLAYER_BASE_URL)
                 updateNotification("Tesla: $teslaUrl")
-                Timber.i("Tesla URL: $teslaUrl (proxy on :${AppConfig.SERVER_PORT} → Ktor on :${server.internalPort})")
+                Timber.i("Tesla URL: $teslaUrl")
+
+                // Register room with relay (non-blocking)
+                serviceScope.launch(Dispatchers.IO) {
+                    roomManager.registerWithRelay(AppConfig.RELAY_API_URL)
+                }
+
+                // Start relay client — connects outbound WSS to cloud relay
+                val relayClient = com.supertesla.aa.network.relay.CloudRelayClient(
+                    relayUrl = AppConfig.RELAY_WSS_URL + "/ws",
+                    roomId = roomManager.roomId,
+                    sessionKey = roomManager.sessionKey,
+                    videoFlow = server.videoSharedFlow,
+                    audioMediaFlow = server.audioMediaFlow,
+                    audioSpeechFlow = server.audioSpeechFlow,
+                    audioSystemFlow = server.audioSystemFlow,
+                    touchRelay = touchRelay,
+                    onAction = server.onAction
+                )
+                relayClient.configJson = """{"action":"CONFIG","width":$videoWidth,"height":$videoHeight,"widthMargin":0,"heightMargin":0,"port":${AppConfig.SERVER_PORT},"resolution":1,"usebt":${config.useBluetooth}}"""
+                relayClient.connect()
+                Timber.i("PIPELINE: Cloud relay client started for room ${roomManager.roomId}")
 
                 // Give the server socket a moment to start, then launch AA once.
                 delay(500)
