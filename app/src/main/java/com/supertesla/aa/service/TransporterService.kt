@@ -45,6 +45,9 @@ class TransporterService : Service() {
     companion object {
         const val ACTION_STOP = "com.supertesla.aa.transporter.STOP"
         const val ACTION_EXIT = "com.supertesla.aa.transporter.EXIT"
+        const val ACTION_APPROVE_TESLA = "com.supertesla.aa.transporter.APPROVE_TESLA"
+        const val ACTION_DENY_TESLA = "com.supertesla.aa.transporter.DENY_TESLA"
+        private const val APPROVAL_NOTIFICATION_ID = 1002
 
         const val EXTRA_TRIGGER_SOURCE = "trigger_source"
 
@@ -104,6 +107,7 @@ class TransporterService : Service() {
 
     // Ktor web server (serves HTML player + /ws for video relay)
     private var webServer: WebServer? = null
+    private var relayClient: com.supertesla.aa.network.relay.CloudRelayClient? = null
 
     // Locks
     private var wakeLock: PowerManager.WakeLock? = null
@@ -127,6 +131,18 @@ class TransporterService : Service() {
                 stopPipeline()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_APPROVE_TESLA -> {
+                Timber.i("User approved Tesla connection")
+                relayClient?.approveConnection()
+                dismissApprovalNotification()
+                return START_STICKY
+            }
+            ACTION_DENY_TESLA -> {
+                Timber.i("User denied Tesla connection")
+                relayClient?.denyConnection()
+                dismissApprovalNotification()
+                return START_STICKY
             }
         }
 
@@ -324,13 +340,12 @@ class TransporterService : Service() {
                     audioSystemFlow = server.audioSystemFlow,
                     touchRelay = touchRelay,
                     onAction = server.onAction,
-                    onApprovalRequest = { client ->
-                        // Tesla wants to connect — auto-approve for now
-                        // TODO: show notification with approve/deny buttons
-                        Timber.i("RELAY: Tesla requesting approval — auto-approving")
-                        client.approveConnection()
+                    onApprovalRequest = { _ ->
+                        Timber.i("RELAY: Tesla requesting approval — showing notification")
+                        showApprovalNotification()
                     }
                 )
+                this@TransporterService.relayClient = relayClient
                 relayClient.configJson = """{"action":"CONFIG","width":$videoWidth,"height":$videoHeight,"widthMargin":0,"heightMargin":0,"port":${AppConfig.SERVER_PORT},"resolution":1,"usebt":${config.useBluetooth}}"""
                 relayClient.connect()
                 Timber.i("PIPELINE: Cloud relay client started for room ${roomManager.roomId}")
@@ -632,5 +647,42 @@ class TransporterService : Service() {
         } catch (e: Exception) {
             Timber.w(e, "Failed to update notification")
         }
+    }
+
+    private fun showApprovalNotification() {
+        val approveIntent = android.app.PendingIntent.getService(
+            this, 0,
+            Intent(this, TransporterService::class.java).apply { action = ACTION_APPROVE_TESLA },
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val denyIntent = android.app.PendingIntent.getService(
+            this, 1,
+            Intent(this, TransporterService::class.java).apply { action = ACTION_DENY_TESLA },
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Tesla wants to connect")
+            .setContentText("Tap Allow to connect your Tesla browser")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .addAction(Notification.Action.Builder(null, "Allow", approveIntent).build())
+            .addAction(Notification.Action.Builder(null, "Deny", denyIntent).build())
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            getSystemService(NotificationManager::class.java)
+                .notify(APPROVAL_NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to show approval notification — auto-approving")
+            relayClient?.approveConnection()
+        }
+    }
+
+    private fun dismissApprovalNotification() {
+        try {
+            getSystemService(NotificationManager::class.java)
+                .cancel(APPROVAL_NOTIFICATION_ID)
+        } catch (_: Exception) {}
     }
 }
