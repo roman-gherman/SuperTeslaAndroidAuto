@@ -44,7 +44,7 @@ class RoomManager(private val context: Context) {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.doOutput = true
-            conn.outputStream.write("""{"room":"$roomId","key":"$sessionKey"}""".toByteArray())
+            conn.outputStream.write("""{"room":"$roomId","phoneKey":"$sessionKey"}""".toByteArray())
             val code = conn.responseCode
             conn.disconnect()
             if (code == 200) {
@@ -72,7 +72,7 @@ class RoomManager(private val context: Context) {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.doOutput = true
-            conn.outputStream.write("""{"room":"$roomId","key":"$sessionKey"}""".toByteArray())
+            conn.outputStream.write("""{"room":"$roomId","phoneKey":"$sessionKey"}""".toByteArray())
             val response = conn.inputStream.bufferedReader().readText()
             conn.disconnect()
             val code = org.json.JSONObject(response).getString("code")
@@ -85,7 +85,7 @@ class RoomManager(private val context: Context) {
     }
 
     fun getPlayerUrl(playerBaseUrl: String): String {
-        return "$playerBaseUrl/$roomId?k=$sessionKey"
+        return "$playerBaseUrl/$roomId"
     }
 
     companion object {

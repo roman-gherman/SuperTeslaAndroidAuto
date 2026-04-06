@@ -4,10 +4,10 @@ const url = require('url');
 
 const PORT = parseInt(process.env.PORT || '8080');
 
-// Room storage: roomId -> { phoneWs, teslaWs, sessionKey, config, codecConfig, idr, lastActivity }
+// Room storage: roomId -> { phoneWs, teslaWs, sessionKeys[], config, codecConfig, idr, pendingTesla, lastActivity }
 const rooms = new Map();
 
-// Pairing codes: code -> { room, key, expires }
+// Pairing codes: code -> { room, expires }
 const pairingCodes = new Map();
 
 // --- HTTP server ---
@@ -30,13 +30,20 @@ const server = http.createServer((req, res) => {
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        const { room, key } = JSON.parse(body);
-        if (!room || !key) { res.writeHead(400); res.end('missing room or key'); return; }
-        if (rooms.has(room) && rooms.get(room).sessionKey !== key) {
+        const { room, phoneKey } = JSON.parse(body);
+        if (!room || !phoneKey) { res.writeHead(400); res.end('missing room or phoneKey'); return; }
+        if (rooms.has(room) && rooms.get(room).phoneKey !== phoneKey) {
           res.writeHead(409); res.end('room taken'); return;
         }
         if (!rooms.has(room)) {
-          rooms.set(room, { phoneWs: null, teslaWs: null, sessionKey: key, config: null, codecConfig: null, idr: null, lastActivity: Date.now() });
+          rooms.set(room, {
+            phoneWs: null, teslaWs: null,
+            phoneKey,              // Phone's master key (never shared)
+            sessionKeys: [],       // Approved Tesla session keys
+            config: null, codecConfig: null, idr: null,
+            pendingTesla: null,    // Tesla WebSocket waiting for approval
+            lastActivity: Date.now()
+          });
         }
         console.log(`Room registered: ${room}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -51,12 +58,15 @@ const server = http.createServer((req, res) => {
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        const { room, key } = JSON.parse(body);
-        // Generate unique 4-digit code
+        const { room, phoneKey } = JSON.parse(body);
+        const roomData = rooms.get(room);
+        if (!roomData || roomData.phoneKey !== phoneKey) {
+          res.writeHead(403); res.end('invalid'); return;
+        }
         let code;
         do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (pairingCodes.has(code));
-        pairingCodes.set(code, { room, key, expires: Date.now() + 300000 }); // 5 min TTL
-        console.log(`Pairing code ${code} created for room ${room}`);
+        pairingCodes.set(code, { room, expires: Date.now() + 300000 });
+        console.log(`Pairing code ${code} for room ${room}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ code }));
       } catch (e) { res.writeHead(400); res.end('invalid json'); }
@@ -75,9 +85,9 @@ const server = http.createServer((req, res) => {
           pairingCodes.delete(code);
           res.writeHead(404); res.end('invalid or expired code'); return;
         }
-        pairingCodes.delete(code); // One-time use
+        pairingCodes.delete(code);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ room: entry.room, key: entry.key }));
+        res.end(JSON.stringify({ room: entry.room }));
       } catch (e) { res.writeHead(400); res.end('invalid json'); }
     });
     return;
@@ -87,13 +97,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       rooms: rooms.size,
-      activeRooms: [...rooms.values()].filter(r => r.phoneWs).length,
-      pairingCodes: pairingCodes.size
+      activeRooms: [...rooms.values()].filter(r => r.phoneWs).length
     }));
     return;
   }
 
-  // Serve static files from public/ directory (for local dev / standalone mode)
+  // Serve static files
   const fs = require('fs');
   const path = require('path');
   const publicDir = path.join(__dirname, '..', 'public');
@@ -103,7 +112,6 @@ const server = http.createServer((req, res) => {
 
   fs.readFile(fullPath, (err, data) => {
     if (err) {
-      // SPA fallback: serve index.html for room code paths
       fs.readFile(path.join(publicDir, 'index.html'), (err2, html) => {
         if (err2) { res.writeHead(404); res.end('not found'); return; }
         res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -124,160 +132,236 @@ wss.on('connection', (ws, req) => {
   const parsed = url.parse(req.url, true);
   const { room: roomId, key, role } = parsed.query;
 
-  if (!roomId || !key || !role || !['phone', 'tesla'].includes(role)) {
-    ws.close(4000, 'missing room, key, or role');
+  if (!roomId || !role || !['phone', 'tesla'].includes(role)) {
+    ws.close(4000, 'missing room or role');
     return;
   }
 
   let roomData = rooms.get(roomId);
 
-  // Auto-create room if phone connects with a key
-  if (!roomData && role === 'phone') {
-    roomData = { phoneWs: null, teslaWs: null, sessionKey: key, config: null, codecConfig: null, idr: null, lastActivity: Date.now() };
-    rooms.set(roomId, roomData);
-    console.log(`Room auto-created by phone: ${roomId}`);
-  }
-
-  if (!roomData) { ws.close(4004, 'room not found'); return; }
-  if (roomData.sessionKey !== key) { ws.close(4003, 'invalid key'); return; }
-
-  roomData.lastActivity = Date.now();
-
+  // === PHONE connects ===
   if (role === 'phone') {
+    if (!key) { ws.close(4000, 'phone must provide key'); return; }
+
+    // Auto-create room
+    if (!roomData) {
+      roomData = {
+        phoneWs: null, teslaWs: null,
+        phoneKey: key, sessionKeys: [],
+        config: null, codecConfig: null, idr: null,
+        pendingTesla: null, lastActivity: Date.now()
+      };
+      rooms.set(roomId, roomData);
+      console.log(`Room auto-created: ${roomId}`);
+    }
+
+    if (roomData.phoneKey !== key) { ws.close(4003, 'invalid phone key'); return; }
+
     if (roomData.phoneWs) { try { roomData.phoneWs.close(4001, 'replaced'); } catch(e) {} }
     roomData.phoneWs = ws;
-    console.log(`Phone connected to room ${roomId}`);
+    roomData.lastActivity = Date.now();
+    console.log(`Phone connected: ${roomId}`);
 
-    // Notify Tesla that phone is back
+    // Notify Tesla
     if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
       roomData.teslaWs.send(JSON.stringify({ type: 'status', message: 'Phone connected' }));
     }
-  }
 
-  if (role === 'tesla') {
-    if (roomData.teslaWs) { try { roomData.teslaWs.close(4001, 'replaced'); } catch(e) {} }
-    roomData.teslaWs = ws;
-    console.log(`Tesla connected to room ${roomId}`);
-
-    // Send cached config
-    if (roomData.config) {
-      ws.send(JSON.stringify(roomData.config));
-    }
-    // Send cached codec config (SPS+PPS) and IDR for immediate decode
-    if (roomData.codecConfig) {
-      ws.send(roomData.codecConfig);
-    }
-    if (roomData.idr) {
-      ws.send(roomData.idr);
+    // If there's a pending Tesla approval request, re-notify the phone
+    if (roomData.pendingTesla && roomData.pendingTesla.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'approval_request', message: 'Tesla wants to connect' }));
     }
 
-    // Notify phone that Tesla connected
-    if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
-      roomData.phoneWs.send(JSON.stringify({ type: 'tesla_connected' }));
-    }
-  }
+    ws.on('message', (data, isBinary) => {
+      roomData.lastActivity = Date.now();
 
-  ws.on('message', (data, isBinary) => {
-    roomData.lastActivity = Date.now();
-
-    if (role === 'phone') {
-      // Phone → Tesla
       if (isBinary) {
-        // Cache codec config and IDR for late-joining Tesla
         const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
         if (bytes.length > 1 && bytes[0] === 0x00) {
-          // Video frame — check for SPS/PPS/IDR
           cacheCodecData(roomData, bytes);
         }
-        // Forward to Tesla
         if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
           roomData.teslaWs.send(data, { binary: true });
         }
       } else {
-        // Text frame (config, status, etc.)
         const text = data.toString();
         try {
           const json = JSON.parse(text);
+
+          // Phone approves Tesla connection
+          if (json.action === 'APPROVE_TESLA') {
+            const sessionKey = json.sessionKey;
+            if (sessionKey && roomData.pendingTesla) {
+              roomData.sessionKeys.push(sessionKey);
+              console.log(`Tesla approved for room ${roomId}, key=${sessionKey.substring(0, 8)}...`);
+              // Send key to Tesla so it can save to localStorage
+              roomData.pendingTesla.send(JSON.stringify({ type: 'approved', sessionKey }));
+              // Promote pending Tesla to active
+              if (roomData.teslaWs) { try { roomData.teslaWs.close(4001, 'replaced'); } catch(e) {} }
+              roomData.teslaWs = roomData.pendingTesla;
+              roomData.pendingTesla = null;
+              // Send cached data
+              if (roomData.config) roomData.teslaWs.send(JSON.stringify(roomData.config));
+              if (roomData.codecConfig) roomData.teslaWs.send(roomData.codecConfig);
+              if (roomData.idr) roomData.teslaWs.send(roomData.idr);
+              return;
+            }
+          }
+
+          // Phone denies Tesla connection
+          if (json.action === 'DENY_TESLA') {
+            if (roomData.pendingTesla) {
+              roomData.pendingTesla.send(JSON.stringify({ type: 'denied', message: 'Connection denied by phone' }));
+              roomData.pendingTesla.close(4003, 'denied');
+              roomData.pendingTesla = null;
+            }
+            return;
+          }
+
+          // Phone revokes a session key
+          if (json.action === 'REVOKE_KEY') {
+            roomData.sessionKeys = roomData.sessionKeys.filter(k => k !== json.sessionKey);
+            console.log(`Key revoked in room ${roomId}`);
+            return;
+          }
+
+          // Phone revokes ALL session keys
+          if (json.action === 'REVOKE_ALL_KEYS') {
+            roomData.sessionKeys = [];
+            if (roomData.teslaWs) {
+              roomData.teslaWs.send(JSON.stringify({ type: 'revoked', message: 'Session revoked' }));
+              roomData.teslaWs.close(4003, 'revoked');
+              roomData.teslaWs = null;
+            }
+            console.log(`All keys revoked in room ${roomId}`);
+            return;
+          }
+
           if (json.action === 'CONFIG') {
             roomData.config = json;
           }
         } catch (e) {}
-        // Forward to Tesla
+
         if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
           roomData.teslaWs.send(text);
         }
       }
+    });
+
+    ws.on('close', () => {
+      if (roomData.phoneWs === ws) {
+        roomData.phoneWs = null;
+        console.log(`Phone disconnected: ${roomId}`);
+        if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
+          roomData.teslaWs.send(JSON.stringify({ type: 'status', message: 'Phone disconnected — waiting...' }));
+        }
+      }
+    });
+
+    ws.on('error', (err) => console.error(`Phone error (${roomId}):`, err.message));
+    return;
+  }
+
+  // === TESLA connects ===
+  if (role === 'tesla') {
+    if (!roomData) { ws.close(4004, 'room not found'); return; }
+    roomData.lastActivity = Date.now();
+
+    // Tesla has a valid session key → connect immediately
+    if (key && roomData.sessionKeys.includes(key)) {
+      if (roomData.teslaWs) { try { roomData.teslaWs.close(4001, 'replaced'); } catch(e) {} }
+      roomData.teslaWs = ws;
+      console.log(`Tesla connected (saved key): ${roomId}`);
+
+      // Send cached data
+      if (roomData.config) ws.send(JSON.stringify(roomData.config));
+      if (roomData.codecConfig) ws.send(roomData.codecConfig);
+      if (roomData.idr) ws.send(roomData.idr);
+
+      if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
+        roomData.phoneWs.send(JSON.stringify({ type: 'tesla_connected' }));
+      }
+
+      setupTeslaHandlers(ws, roomData, roomId);
+      return;
     }
 
-    if (role === 'tesla') {
-      // Tesla → Phone (touch events, START, STOP, ACK, PING)
-      if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
-        roomData.phoneWs.send(data, { binary: isBinary });
+    // No key or invalid key → request phone approval
+    if (roomData.pendingTesla) {
+      try { roomData.pendingTesla.close(4001, 'replaced by new request'); } catch(e) {}
+    }
+    roomData.pendingTesla = ws;
+    console.log(`Tesla requesting approval: ${roomId}`);
+
+    // Notify phone
+    if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
+      roomData.phoneWs.send(JSON.stringify({ type: 'approval_request', message: 'Tesla wants to connect' }));
+    }
+
+    // Tell Tesla to wait
+    ws.send(JSON.stringify({ type: 'waiting_approval', message: 'Waiting for phone approval...' }));
+
+    ws.on('close', () => {
+      if (roomData.pendingTesla === ws) {
+        roomData.pendingTesla = null;
+        console.log(`Pending Tesla disconnected: ${roomId}`);
+        if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
+          roomData.phoneWs.send(JSON.stringify({ type: 'approval_cancelled' }));
+        }
       }
+    });
+
+    ws.on('error', (err) => console.error(`Tesla pending error (${roomId}):`, err.message));
+    return;
+  }
+});
+
+function setupTeslaHandlers(ws, roomData, roomId) {
+  ws.on('message', (data, isBinary) => {
+    roomData.lastActivity = Date.now();
+    if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
+      roomData.phoneWs.send(data, { binary: isBinary });
     }
   });
 
   ws.on('close', () => {
-    if (role === 'phone' && roomData.phoneWs === ws) {
-      roomData.phoneWs = null;
-      console.log(`Phone disconnected from room ${roomId}`);
-      if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
-        roomData.teslaWs.send(JSON.stringify({ type: 'status', message: 'Phone disconnected — waiting for reconnect...' }));
-      }
-    }
-    if (role === 'tesla' && roomData.teslaWs === ws) {
+    if (roomData.teslaWs === ws) {
       roomData.teslaWs = null;
-      console.log(`Tesla disconnected from room ${roomId}`);
+      console.log(`Tesla disconnected: ${roomId}`);
       if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
         roomData.phoneWs.send(JSON.stringify({ type: 'tesla_disconnected' }));
       }
     }
   });
 
-  ws.on('error', (err) => {
-    console.error(`WS error in room ${roomId} (${role}):`, err.message);
-  });
-});
+  ws.on('error', (err) => console.error(`Tesla error (${roomId}):`, err.message));
+}
 
 // --- Codec config caching ---
 function cacheCodecData(roomData, bytes) {
-  // bytes[0] = 0x00 (video prefix), bytes[1+] = Annex B H.264
-  // Scan for NAL start codes (0x00000001) and check NAL type
   for (let i = 1; i < bytes.length - 4; i++) {
     if (bytes[i] === 0 && bytes[i+1] === 0 && bytes[i+2] === 0 && bytes[i+3] === 1) {
       const nalType = bytes[i+4] & 0x1F;
-      if (nalType === 7) { // SPS (usually SPS+PPS together)
-        roomData.codecConfig = Buffer.from(bytes);
-        return;
-      }
-      if (nalType === 5) { // IDR keyframe
-        roomData.idr = Buffer.from(bytes);
-        return;
-      }
+      if (nalType === 7) { roomData.codecConfig = Buffer.from(bytes); return; }
+      if (nalType === 5) { roomData.idr = Buffer.from(bytes); return; }
     }
   }
 }
 
-// --- Cleanup expired rooms and pairing codes ---
+// --- Cleanup ---
 setInterval(() => {
   const now = Date.now();
-  const DAY = 86400000;
-
-  // Clean expired pairing codes
   for (const [code, entry] of pairingCodes) {
     if (now > entry.expires) pairingCodes.delete(code);
   }
-
-  // Clean idle rooms (24h without activity)
   for (const [id, room] of rooms) {
-    if (now - room.lastActivity > DAY && !room.phoneWs && !room.teslaWs) {
+    if (now - room.lastActivity > 86400000 && !room.phoneWs && !room.teslaWs) {
       rooms.delete(id);
       console.log(`Room ${id} expired`);
     }
   }
 }, 60000);
 
-// --- Start ---
 server.listen(PORT, () => {
-  console.log(`SuperTesla relay listening on :${PORT}`);
+  console.log(`SuperTesla relay v2 listening on :${PORT}`);
 });

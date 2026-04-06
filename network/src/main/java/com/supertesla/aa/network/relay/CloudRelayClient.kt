@@ -24,7 +24,9 @@ class CloudRelayClient(
     private val audioSpeechFlow: MutableSharedFlow<ByteArray>,
     private val audioSystemFlow: MutableSharedFlow<ByteArray>,
     private val touchRelay: TouchInputRelay?,
-    private val onAction: ((action: String, json: String) -> Unit)?
+    private val onAction: ((action: String, json: String) -> Unit)?,
+    /** Called when Tesla requests approval. Implementation should show UI and call approveConnection()/denyConnection(). */
+    val onApprovalRequest: ((CloudRelayClient) -> Unit)? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var client: WebSocketClient? = null
@@ -40,6 +42,38 @@ class CloudRelayClient(
 
     /** Config JSON to send to Tesla on connect */
     @Volatile var configJson: String? = null
+
+    /** Approve a pending Tesla connection. Generates a new session key. */
+    fun approveConnection() {
+        val sessionKey = java.util.UUID.randomUUID().toString().replace("-", "").take(32)
+        val msg = """{"action":"APPROVE_TESLA","sessionKey":"$sessionKey"}"""
+        try {
+            client?.send(msg)
+            Timber.i("Relay: approved Tesla connection, key=${sessionKey.take(8)}...")
+        } catch (e: Exception) {
+            Timber.w(e, "Relay: failed to send approval")
+        }
+    }
+
+    /** Deny a pending Tesla connection. */
+    fun denyConnection() {
+        try {
+            client?.send("""{"action":"DENY_TESLA"}""")
+            Timber.i("Relay: denied Tesla connection")
+        } catch (e: Exception) {
+            Timber.w(e, "Relay: failed to send denial")
+        }
+    }
+
+    /** Revoke all saved session keys. Tesla will need re-approval next time. */
+    fun revokeAllKeys() {
+        try {
+            client?.send("""{"action":"REVOKE_ALL_KEYS"}""")
+            Timber.i("Relay: revoked all Tesla session keys")
+        } catch (e: Exception) {
+            Timber.w(e, "Relay: failed to revoke keys")
+        }
+    }
 
     fun connect() {
         reconnectJob?.cancel()
@@ -170,11 +204,33 @@ class CloudRelayClient(
 
     private fun handleTextMessage(text: String) {
         try {
-            // Try touch relay first
+            val json = org.json.JSONObject(text)
+
+            // Handle relay system messages
+            val type = json.optString("type", "")
+            when (type) {
+                "approval_request" -> {
+                    Timber.i("Relay: Tesla requesting approval")
+                    onApprovalRequest?.invoke(this)
+                    return
+                }
+                "approval_cancelled" -> {
+                    Timber.i("Relay: Tesla cancelled approval request")
+                    return
+                }
+                "tesla_connected" -> {
+                    Timber.i("Relay: Tesla connected")
+                    return
+                }
+                "tesla_disconnected" -> {
+                    Timber.i("Relay: Tesla disconnected")
+                    return
+                }
+            }
+
+            // Try touch relay
             val handled = touchRelay?.handleMessage(text) ?: false
             if (!handled) {
-                // Try control action
-                val json = org.json.JSONObject(text)
                 val action = json.optString("action", "")
                 if (action.isNotEmpty()) {
                     onAction?.invoke(action, text)

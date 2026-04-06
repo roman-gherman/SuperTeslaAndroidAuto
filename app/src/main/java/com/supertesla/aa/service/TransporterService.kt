@@ -323,7 +323,13 @@ class TransporterService : Service() {
                     audioSpeechFlow = server.audioSpeechFlow,
                     audioSystemFlow = server.audioSystemFlow,
                     touchRelay = touchRelay,
-                    onAction = server.onAction
+                    onAction = server.onAction,
+                    onApprovalRequest = { client ->
+                        // Tesla wants to connect — auto-approve for now
+                        // TODO: show notification with approve/deny buttons
+                        Timber.i("RELAY: Tesla requesting approval — auto-approving")
+                        client.approveConnection()
+                    }
                 )
                 relayClient.configJson = """{"action":"CONFIG","width":$videoWidth,"height":$videoHeight,"widthMargin":0,"heightMargin":0,"port":${AppConfig.SERVER_PORT},"resolution":1,"usebt":${config.useBluetooth}}"""
                 relayClient.connect()

@@ -488,52 +488,36 @@
     }
 
     // ---- Connection mode detection ----
-    // Relay mode: page served from CDN, WebSocket goes to relay server
-    // Local mode: page served from phone, WebSocket goes to same host
     var relayMode = false;
     var relayRoom = null;
-    var relayKey = null;
-    // RELAY_HOST is set by the landing page or build config
+    var relayKey = null; // null = need approval, string = saved key
     var RELAY_HOST = window.SUPERTESLA_RELAY_HOST || location.host;
 
     function detectConnectionMode() {
-        var params = new URLSearchParams(location.search);
         var path = location.pathname.replace(/^\//, '').replace(/\/$/, '');
 
-        // Check for relay params: ?room=X&key=Y
-        if (params.get('room') && params.get('key')) {
+        // Room code from URL path (3-8 alphanumeric chars)
+        if (path.length >= 3 && path.length <= 8 && /^[a-z0-9]+$/.test(path)) {
             relayMode = true;
-            relayRoom = params.get('room');
-            relayKey = params.get('key');
-            // Store for reconnects
-            try { sessionStorage.setItem('relay_room', relayRoom); sessionStorage.setItem('relay_key', relayKey); } catch(e){}
+            relayRoom = path;
+            // Check localStorage for saved session key
+            try {
+                relayKey = localStorage.getItem('staa_key_' + relayRoom) || null;
+            } catch(e) {}
             return;
         }
-        // Check sessionStorage (reconnect after page refresh)
-        try {
-            var storedRoom = sessionStorage.getItem('relay_room');
-            var storedKey = sessionStorage.getItem('relay_key');
-            if (storedRoom && storedKey) {
-                relayMode = true;
-                relayRoom = storedRoom;
-                relayKey = storedKey;
-                return;
-            }
-        } catch(e){}
-        // Check path: /XXXX (4-6 char room code) — key must be in URL or storage
-        if (path.length >= 3 && path.length <= 8 && /^[a-z0-9]+$/.test(path)) {
-            relayRoom = path;
-            var k = params.get('k') || params.get('key');
-            if (k) {
-                relayMode = true;
-                relayKey = k;
-                try { sessionStorage.setItem('relay_room', relayRoom); sessionStorage.setItem('relay_key', relayKey); } catch(e){}
-            }
+
+        // URL params fallback: ?room=X
+        var params = new URLSearchParams(location.search);
+        if (params.get('room')) {
+            relayMode = true;
+            relayRoom = params.get('room');
+            try { relayKey = localStorage.getItem('staa_key_' + relayRoom) || null; } catch(e) {}
         }
     }
     detectConnectionMode();
 
-    // Legacy local mode host discovery
+    // Legacy local mode
     function getServerHost() {
         var params = new URLSearchParams(location.search);
         if (params.get('ip')) return params.get('ip') + ':8080';
@@ -542,7 +526,9 @@
     }
 
     var serverHost = relayMode ? RELAY_HOST : getServerHost();
-    console.log(relayMode ? 'Relay mode: room=' + relayRoom : 'Local mode: ' + serverHost);
+    console.log(relayMode
+        ? 'Relay mode: room=' + relayRoom + ' key=' + (relayKey ? 'saved' : 'none (will request approval)')
+        : 'Local mode: ' + serverHost);
     var connInfo = document.getElementById('connection-info');
     if (connInfo) connInfo.textContent = relayMode ? 'Room: ' + relayRoom : 'Server: ' + serverHost;
 
@@ -551,7 +537,8 @@
         var url;
         if (relayMode) {
             var wsProto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
-            url = wsProto + RELAY_HOST + '/ws?room=' + relayRoom + '&key=' + encodeURIComponent(relayKey) + '&role=tesla';
+            url = wsProto + RELAY_HOST + '/ws?room=' + relayRoom + '&role=tesla';
+            if (relayKey) url += '&key=' + encodeURIComponent(relayKey);
         } else {
             var wsProto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
             url = wsProto + serverHost + '/ws';
@@ -602,7 +589,38 @@
             } else {
                 try {
                     var msg = JSON.parse(event.data);
-                    if (msg.type === 'status') setStatus('connected', msg.message || 'Connected');
+                    if (msg.type === 'status') {
+                        setStatus('connected', msg.message || 'Connected');
+                    } else if (msg.type === 'waiting_approval') {
+                        setStatus('buffering', 'Waiting for phone approval...');
+                        if (splash) {
+                            splash.querySelector('p').textContent = 'Approve on your phone to connect';
+                        }
+                    } else if (msg.type === 'approved') {
+                        // Phone approved! Save session key for future use
+                        if (msg.sessionKey && relayRoom) {
+                            try { localStorage.setItem('staa_key_' + relayRoom, msg.sessionKey); } catch(e) {}
+                            relayKey = msg.sessionKey;
+                            console.log('Approved! Session key saved for room ' + relayRoom);
+                        }
+                        setStatus('connected', 'Connected');
+                        // Send START to begin video
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ action: 'START' }));
+                        }
+                    } else if (msg.type === 'denied') {
+                        setStatus('', 'Connection denied by phone');
+                        if (splash) {
+                            splash.querySelector('p').textContent = msg.message || 'Connection denied';
+                        }
+                    } else if (msg.type === 'revoked') {
+                        // Session revoked — clear saved key
+                        if (relayRoom) {
+                            try { localStorage.removeItem('staa_key_' + relayRoom); } catch(e) {}
+                        }
+                        relayKey = null;
+                        setStatus('', 'Session revoked');
+                    }
                 } catch (e) {}
             }
         };
