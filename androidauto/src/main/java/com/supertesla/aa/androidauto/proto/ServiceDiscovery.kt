@@ -229,12 +229,12 @@ object ServiceDiscovery {
     }
 
     fun buildDrivingStatusEvent(status: Int = 0): ByteArray {
+        // SensorBatch proto: field 13 = driving_status_data (repeated DrivingStatusData)
+        // DrivingStatusData: field 1 = status (int32)
+        // TaaDa: SensorBatch.newBuilder().addDrivingStatusData(DrivingStatusData.newBuilder().setStatus(0))
         val out = ByteArrayOutputStream()
-        ProtoEncoder.writeEmbeddedMessage(out, 1) { event ->
-            ProtoEncoder.writeVarintField(event, 1, 13) // SENSOR_DRIVING_STATUS_DATA
-            ProtoEncoder.writeEmbeddedMessage(event, 4) { ds ->
-                ProtoEncoder.writeVarintField(ds, 1, status.toLong())
-            }
+        ProtoEncoder.writeEmbeddedMessage(out, 13) { ds ->
+            ProtoEncoder.writeVarintField(ds, 1, status.toLong())
         }
         return out.toByteArray()
     }

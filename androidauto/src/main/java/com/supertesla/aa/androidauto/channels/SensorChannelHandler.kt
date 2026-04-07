@@ -79,12 +79,11 @@ class SensorChannelHandler(
 
     /** Send parking brake status. TaaDa always sends true (parked). */
     fun sendParkingBrake(engaged: Boolean) {
+        // SensorBatch proto: field 7 = parking_brake_data (ParkingBrakeData)
+        // ParkingBrakeData: field 1 = is_parked (bool)
         val payload = ProtoEncoder.encode {
-            writeMessage(1) {
-                writeVarint(1, 7) // SENSOR_PARKING_BRAKE
-                writeMessage(7) {
-                    writeVarint(1, if (engaged) 1L else 0L)
-                }
+            writeMessage(7) {
+                writeVarint(1, if (engaged) 1L else 0L)
             }
         }
         mux.sendEncrypted(ChannelId.SENSOR, SensorMessageType.EVENT_INDICATION, payload)
@@ -93,23 +92,11 @@ class SensorChannelHandler(
 
     /** Send night mode. Forwarded from Tesla browser. */
     fun sendNightMode(isNight: Boolean) {
-        // Night mode sensor event:
-        //   field 1 (message): sensor_data
-        //     field 1: sensor_type = 10 (NIGHT_MODE)
-        //     field 3 (message): night_data
-        //       field 1: is_night (bool)
-        // NOTE: For day mode (isNight=false), we must still write the value
-        // explicitly. Proto3 omits 0 values, but AA needs the field present.
-        // Writing is_night=2 means "day" in TaaDa's encoding (non-zero = has value, even=day).
-        // Simpler: always send isNight=false by writing 0, and send periodic updates.
+        // SensorBatch proto: field 10 = night_mode_data (NightModeData)
+        // NightModeData: field 1 = is_night (bool)
         val payload = ProtoEncoder.encode {
-            writeMessage(1) {
-                writeVarint(1, 10) // SENSOR_NIGHT_MODE
-                writeMessage(3) {
-                    // Always write the field — use 1 for night, 0 for day
-                    // Force write even for 0 by including the field
-                    writeVarint(1, if (isNight) 1L else 0L)
-                }
+            writeMessage(10) {
+                writeVarint(1, if (isNight) 1L else 0L)
             }
         }
         mux.sendEncrypted(ChannelId.SENSOR, SensorMessageType.EVENT_INDICATION, payload)
