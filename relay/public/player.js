@@ -146,8 +146,6 @@
         try {
             decoder.configure({
                 codec: codec,
-                codedWidth: configWidth,
-                codedHeight: configHeight,
                 description: description,
                 optimizeForLatency: true
             });
@@ -380,22 +378,15 @@
                         // Setup touch
                         if (window.SuperTeslaTouch) window.SuperTeslaTouch.setWebSocket(ws);
                     } else if (msg.action === 'CONFIG') {
-                        // Store config-driven resolution
+                        // Store config for touch coordinates only.
+                        // Do NOT reconfigure decoder — it uses the SPS from the
+                        // actual video stream, which is authoritative.
                         if (msg.width) configWidth = msg.width;
                         if (msg.height) configHeight = msg.height;
                         console.log('Config received: ' + configWidth + 'x' + configHeight);
                         if (window.SuperTeslaTouch) {
                             window.SuperTeslaTouch.DISPLAY_W = configWidth;
                             window.SuperTeslaTouch.DISPLAY_H = configHeight;
-                        }
-                        if (canvasEl) {
-                            canvasEl.width = configWidth;
-                            canvasEl.height = configHeight;
-                        }
-                        // Re-configure decoder if already configured with wrong resolution
-                        if (decoderConfigured) {
-                            decoderConfigured = false;
-                            configureWebCodecsDecoder();
                         }
                     } else if (msg.type === 'denied') {
                         setStatus('', 'Connection denied by phone');
