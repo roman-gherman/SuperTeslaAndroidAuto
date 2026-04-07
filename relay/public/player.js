@@ -38,7 +38,6 @@
     function hideSplash() {
         if (splash && !splash.classList.contains('hidden')) {
             splash.classList.add('hidden');
-            if (videoContainer) videoContainer.style.display = 'block';
         }
     }
 
@@ -226,9 +225,9 @@
             }
         }
 
-        if ((gotNewSps || gotNewPps) && cachedSps && cachedPps && !decoderConfigured) {
-            configureWebCodecsDecoder();
-        }
+        // Don't configure decoder here — wait for IDR (case 5 above).
+        // Configuring on SPS+PPS alone causes "key frame required" errors
+        // when the next frame is a P-frame instead of an IDR.
     }
 
     // ---- Fetch config from server (TaaDa-compatible /config endpoint) ----
