@@ -93,9 +93,14 @@
         return out;
     }
 
+    var frameCount = 0;
     function createWebCodecsDecoder() {
         return new VideoDecoder({
             output: function(frame) {
+                frameCount++;
+                if (frameCount <= 3) {
+                    console.log('Frame #' + frameCount + ': ' + frame.displayWidth + 'x' + frame.displayHeight + ' coded:' + frame.codedWidth + 'x' + frame.codedHeight);
+                }
                 if (ctx) {
                     if (canvasEl.width !== frame.displayWidth || canvasEl.height !== frame.displayHeight) {
                         canvasEl.width = frame.displayWidth;
@@ -151,7 +156,7 @@
             });
             decoderConfigured = true;
             frameTimestamp = 0;
-            console.log('WebCodecs configured, codec:', codec);
+            console.log('WebCodecs configured, codec:', codec, 'sps:', cachedSps.length + 'b', 'pps:', cachedPps.length + 'b');
         } catch (e) {
             console.error('WebCodecs configure failed:', e);
             decoderConfigured = false;

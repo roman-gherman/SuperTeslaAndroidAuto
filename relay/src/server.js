@@ -93,12 +93,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Config endpoint — return default config (real config comes via WebSocket)
+  // Config endpoint — return phone's config if available, else defaults
   if (parsed.pathname === '/config') {
-    var w = parseInt(parsed.query.w) || 1920;
-    var h = parseInt(parsed.query.h) || 1080;
+    // Extract room from referer or query
+    var roomId = parsed.query.room;
+    if (!roomId) {
+      // Try to extract from referer path (e.g., /5j5s)
+      var ref = req.headers.referer || '';
+      var m = ref.match(/\/([a-z0-9]{3,8})(?:\?|$)/);
+      if (m) roomId = m[1];
+    }
+    var roomData = roomId ? rooms.get(roomId) : null;
+    var cfg = (roomData && roomData.config) || { width: 1280, height: 720 };
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ width: 1280, height: 720, widthMargin: 0, heightMargin: 0, port: 8080, resolution: 1, usebt: false }));
+    res.end(JSON.stringify({ width: cfg.width || 1280, height: cfg.height || 720, widthMargin: 0, heightMargin: 0, port: 8080, resolution: 1, usebt: false }));
     return;
   }
 
