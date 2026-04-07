@@ -169,7 +169,11 @@ wss.on('connection', (ws, req) => {
     if (roomData.phoneWs) { try { roomData.phoneWs.close(4001, 'replaced'); } catch(e) {} }
     roomData.phoneWs = ws;
     roomData.lastActivity = Date.now();
-    console.log(`Phone connected: ${roomId}`);
+    // Clear stale codec cache — new phone session may have different resolution
+    roomData.codecConfig = null;
+    roomData.idr = null;
+    roomData.config = null;
+    console.log(`Phone connected: ${roomId} (codec cache cleared)`);
 
     // Notify Tesla
     if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
