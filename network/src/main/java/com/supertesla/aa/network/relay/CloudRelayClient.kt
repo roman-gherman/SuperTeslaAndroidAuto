@@ -116,8 +116,9 @@ class CloudRelayClient(
                 Timber.i("Relay: connected to room $roomId")
                 isConnected = true
 
-                // Send CONFIG once — relay server caches it and replays
-                // to Tesla on each browser connect/refresh.
+                // Send CONFIG — relay server caches it (roomData.config) and
+                // replays it to Tesla on each browser connect (line 290 in server.js).
+                // Also forward SPS+IDR to relay for caching (lines 356-364).
                 configJson?.let { send(it) }
 
                 // Auto-trigger START — Tesla may already be connected
@@ -242,32 +243,11 @@ class CloudRelayClient(
                     return
                 }
                 "tesla_connected" -> {
-                    val hasSps = cachedCodecConfig != null
-                    val hasIdr = cachedIdr != null
-                    Timber.i("Relay: Tesla connected — gate=${keyframeGateOpen}, hasSPS=$hasSps, hasIDR=$hasIdr")
-                    // Reset gate so P-frames are dropped until keyframe
-                    keyframeGateOpen = false
-                    // Don't send CONFIG here — relay server caches it from onOpen
-                    // and auto-sends to Tesla. Sending again causes double-CONFIG
-                    // which reconfigures the decoder mid-stream.
-
-                    // Replay cached SPS+PPS and IDR so browser can decode immediately
-                    cachedCodecConfig?.let {
-                        try {
-                            client?.send(VideoStreamHandler.prefixVideo(it))
-                            Timber.i("Relay: replayed SPS+PPS (${it.size}b)")
-                        } catch (e: Exception) { Timber.w("Relay: SPS replay failed: ${e.message}") }
-                    }
-                    cachedIdr?.let {
-                        try {
-                            client?.send(VideoStreamHandler.prefixVideo(it))
-                            keyframeGateOpen = true
-                            Timber.i("Relay: replayed IDR (${it.size}b), gate opened")
-                        } catch (e: Exception) { Timber.w("Relay: IDR replay failed: ${e.message}") }
-                    }
-                    if (!hasIdr) {
-                        Timber.w("Relay: no cached IDR — requesting keyframe from AA")
-                    }
+                    Timber.i("Relay: Tesla connected")
+                    // The relay server already sent cached CONFIG + SPS + IDR to Tesla
+                    // (server.js lines 290-292). Keep the gate open so live P-frames
+                    // flow immediately after the relay's cached IDR.
+                    keyframeGateOpen = true
                     // Trigger START in case video focus needs enabling
                     onAction?.invoke("START", text)
                     return
