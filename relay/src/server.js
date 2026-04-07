@@ -221,9 +221,10 @@ wss.on('connection', (ws, req) => {
               if (roomData.teslaWs) { try { roomData.teslaWs.close(4001, 'replaced'); } catch(e) {} }
               roomData.teslaWs = roomData.pendingTesla;
               roomData.pendingTesla = null;
-              // Send cached config + SPS only (not stale IDR)
+              // Send cached data
               if (roomData.config) roomData.teslaWs.send(JSON.stringify(roomData.config));
               if (roomData.codecConfig) roomData.teslaWs.send(roomData.codecConfig);
+              if (roomData.idr) roomData.teslaWs.send(roomData.idr);
               // Ask phone for fresh keyframe so Tesla can decode immediately
               if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
                 roomData.phoneWs.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
@@ -297,15 +298,14 @@ wss.on('connection', (ws, req) => {
       roomData.teslaWs = ws;
       console.log(`Tesla connected (saved key): ${roomId}`);
 
-      // Send cached config + SPS only (NOT cached IDR — it's stale and
-      // causes artifacts when combined with live P-frames).
-      // The phone will send a fresh IDR via the live stream.
+      // Send cached data
       if (roomData.config) ws.send(JSON.stringify(roomData.config));
       if (roomData.codecConfig) ws.send(roomData.codecConfig);
+      if (roomData.idr) ws.send(roomData.idr);
 
       if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
         roomData.phoneWs.send(JSON.stringify({ type: 'tesla_connected' }));
-        // Request fresh keyframe so Tesla gets a clean IDR
+        // Request fresh keyframe so Tesla can decode immediately
         roomData.phoneWs.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
       }
 
