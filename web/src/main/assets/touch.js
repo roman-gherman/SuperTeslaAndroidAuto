@@ -21,11 +21,7 @@
 
     function getVideoRect() {
         // Get the actual rendered video area, accounting for object-fit:contain letterboxing.
-        var canvas = document.getElementById('player-canvas');
-        var video = document.getElementById('player-video');
-        var el = (canvas && canvas.offsetWidth > 0) ? canvas
-               : (video && video.offsetWidth > 0) ? video
-               : canvas || video;
+        var el = document.getElementById('player-canvas');
         if (!el) return null;
 
         var rect = el.getBoundingClientRect();

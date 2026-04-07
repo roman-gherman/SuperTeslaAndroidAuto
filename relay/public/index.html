@@ -20,7 +20,8 @@
     <div id="app">
         <!-- Player UI (hidden until room is set) -->
         <div id="video-container">
-            <video id="player-video" autoplay playsinline muted style="display:none"></video>
+            <!-- No <video> element — Tesla blocks video while driving.
+                 Canvas rendering is allowed. WebCodecs decodes H.264 to canvas. -->
             <canvas id="player-canvas" width="1280" height="720" style="display:none"></canvas>
             <div id="touchpad"></div>
         </div>
