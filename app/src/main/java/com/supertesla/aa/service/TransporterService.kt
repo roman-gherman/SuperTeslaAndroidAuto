@@ -320,7 +320,7 @@ class TransporterService : Service() {
                         }
                         "ACK" -> emulator?.videoHandler?.sendAck()
                         "PING" -> keepaliveWatchdog?.reset()
-                        "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame()
+                        "REQUEST_KEYFRAME" -> nalStreamManager?.requestKeyFrame(force = true)
                         "RELOAD" -> {
                             nalStreamManager?.toggleVideoFocus(false)
                             serviceScope.launch { delay(100); nalStreamManager?.toggleVideoFocus(true) }

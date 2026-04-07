@@ -164,15 +164,15 @@ class NalStreamManager {
     /**
      * Request a keyframe from AA (debounced to max once per 2s).
      */
-    fun requestKeyFrame() {
+    fun requestKeyFrame(force: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (now - lastKeyframeRequestTime < KEYFRAME_DEBOUNCE_MS) {
+        if (!force && now - lastKeyframeRequestTime < KEYFRAME_DEBOUNCE_MS) {
             Timber.d("$TAG: Keyframe request debounced")
             return
         }
         lastKeyframeRequestTime = now
         onSendVideoFocus?.invoke(true, true)  // unsolicited = keyframe request
-        Timber.d("$TAG: Keyframe requested")
+        Timber.d("$TAG: Keyframe requested (force=$force)")
     }
 
     private fun processFrame(buffer: ByteBuffer) {
