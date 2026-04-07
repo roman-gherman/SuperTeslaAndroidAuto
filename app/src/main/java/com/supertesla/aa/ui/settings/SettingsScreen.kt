@@ -15,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.supertesla.aa.BuildConfig
 import com.supertesla.aa.androidauto.headunit.HeadUnitConfig
+import com.supertesla.aa.service.TransporterService
 import com.supertesla.aa.ui.theme.*
 
 @Composable
@@ -115,7 +117,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             )
 
-            DropdownSetting("Streaming Mode", streamingMode, listOf("auto", "webrtc", "mse", "mjpeg")) {
+            DropdownSetting("Streaming Mode", streamingMode, listOf("auto", "mse", "mjpeg")) {
                 streamingMode = it; prefs.edit().putString("streaming_mode", it).apply()
             }
 
@@ -142,6 +144,19 @@ fun SettingsScreen(onBack: () -> Unit) {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     }
                 )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ===== Relay =====
+            SectionHeader("Relay")
+            val relayUrl by TransporterService.teslaUrlFlow.collectAsState()
+            val relayConnected by TransporterService.relayConnectedFlow.collectAsState()
+            InfoSetting("Room URL", relayUrl.ifEmpty { "Not started" })
+            InfoSetting("Relay Status", if (relayConnected) "Connected" else "Disconnected")
+            ActionSetting("Revoke All Sessions") {
+                TransporterService.revokeAllKeys()
+                Toast.makeText(context, "All Tesla sessions revoked", Toast.LENGTH_SHORT).show()
             }
 
             Spacer(Modifier.height(16.dp))
@@ -185,7 +200,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Version", style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
-                Text("0.1.0", style = MaterialTheme.typography.bodyMedium, color = TeslaGray)
+                Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.bodyMedium, color = TeslaGray)
             }
             InfoSetting("Hotspot IP", com.supertesla.aa.core.config.AppConfig.detectedHotspotIp ?: "Not detected")
 
@@ -343,7 +358,7 @@ private fun exportLogs(context: Context) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, "SuperTesla AA Logs")
-        putExtra(Intent.EXTRA_TEXT, "Log export from SuperTesla AA v0.1.0")
+        putExtra(Intent.EXTRA_TEXT, "Log export from SuperTesla AA v${BuildConfig.VERSION_NAME}")
     }
     context.startActivity(Intent.createChooser(intent, "Export Logs").apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK

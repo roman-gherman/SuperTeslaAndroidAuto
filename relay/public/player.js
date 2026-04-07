@@ -25,6 +25,10 @@
     var decoderConfigured = false;
     var frameTimestamp = 0;
 
+    // Config-driven resolution (defaults, updated when CONFIG message received)
+    var configWidth = 1280;
+    var configHeight = 720;
+
     // ---- Status helpers ----
     function setStatus(state, text) {
         if (statusDot) statusDot.className = state;
@@ -142,8 +146,8 @@
         try {
             decoder.configure({
                 codec: codec,
-                codedWidth: 1280,
-                codedHeight: 720,
+                codedWidth: configWidth,
+                codedHeight: configHeight,
                 description: description,
                 optimizeForLatency: true
             });
@@ -375,6 +379,24 @@
                         }
                         // Setup touch
                         if (window.SuperTeslaTouch) window.SuperTeslaTouch.setWebSocket(ws);
+                    } else if (msg.action === 'CONFIG') {
+                        // Store config-driven resolution
+                        if (msg.width) configWidth = msg.width;
+                        if (msg.height) configHeight = msg.height;
+                        console.log('Config received: ' + configWidth + 'x' + configHeight);
+                        if (window.SuperTeslaTouch) {
+                            window.SuperTeslaTouch.DISPLAY_W = configWidth;
+                            window.SuperTeslaTouch.DISPLAY_H = configHeight;
+                        }
+                        if (canvasEl) {
+                            canvasEl.width = configWidth;
+                            canvasEl.height = configHeight;
+                        }
+                        // Re-configure decoder if already configured with wrong resolution
+                        if (decoderConfigured) {
+                            decoderConfigured = false;
+                            configureWebCodecsDecoder();
+                        }
                     } else if (msg.type === 'denied') {
                         setStatus('', 'Connection denied by phone');
                         if (splash) {

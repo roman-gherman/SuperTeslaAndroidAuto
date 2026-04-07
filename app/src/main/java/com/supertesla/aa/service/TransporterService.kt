@@ -71,6 +71,16 @@ class TransporterService : Service() {
         val hotspotStateFlow = kotlinx.coroutines.flow.MutableStateFlow<com.supertesla.aa.core.model.HotspotState>(
             com.supertesla.aa.core.model.HotspotState.Unknown
         )
+        val relayConnectedFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+        /** Reference to the active relay client (set by the pipeline, cleared on stop). */
+        @Volatile
+        private var activeRelayClient: com.supertesla.aa.network.relay.CloudRelayClient? = null
+
+        /** Revoke all saved Tesla session keys via the cloud relay. */
+        fun revokeAllKeys() {
+            activeRelayClient?.revokeAllKeys()
+        }
 
         var isActive: Boolean
             get() = isActiveFlow.value
@@ -197,7 +207,9 @@ class TransporterService : Service() {
                 try {
                     Runtime.getRuntime().exec(arrayOf("am", "force-stop", "com.google.android.projection.gearhead"))
                     delay(500)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Timber.w(e, "PIPELINE: Failed to force-stop AA car process")
+                }
 
                 // 2b. Start hotspot monitoring
                 try {
@@ -353,9 +365,22 @@ class TransporterService : Service() {
                     }
                 )
                 this@TransporterService.relayClient = relayClient
+                Companion.activeRelayClient = relayClient
                 relayClient.configJson = """{"action":"CONFIG","width":$videoWidth,"height":$videoHeight,"widthMargin":0,"heightMargin":0,"port":${AppConfig.SERVER_PORT},"resolution":1,"usebt":${config.useBluetooth}}"""
                 relayClient.connect()
                 Timber.i("PIPELINE: Cloud relay client started for room ${roomManager.roomId}")
+
+                // Monitor relay connection status
+                serviceScope.launch {
+                    while (isActive) {
+                        val connected = relayClient.isConnected
+                        if (relayConnectedFlow.value != connected) {
+                            relayConnectedFlow.value = connected
+                            Timber.i("Relay connected: $connected")
+                        }
+                        delay(2000)
+                    }
+                }
 
                 // Give the server socket a moment to start, then launch AA once.
                 delay(500)
@@ -595,12 +620,20 @@ class TransporterService : Service() {
             }.start()
         }
 
+        // Disconnect relay client
+        try { relayClient?.disconnect() } catch (_: Exception) {}
+        relayClient = null
+
         // Cancel keepalive watchdog
         try { keepaliveWatchdog?.cancel() } catch (_: Exception) {}
         keepaliveWatchdog = null
 
         // Release locks
         try { releaseLocks() } catch (_: Exception) {}
+
+        // Clear relay reference
+        Companion.activeRelayClient = null
+        relayConnectedFlow.value = false
 
         statusText.value = "Idle"
     }
@@ -648,9 +681,11 @@ class TransporterService : Service() {
 
     private fun updateNotification(text: String) {
         statusText.value = text
+        val relayStatus = if (relayConnectedFlow.value) "Relay: OK" else "Relay: --"
+        val fullText = "$text | $relayStatus"
         try {
             getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, createNotification(text))
+                .notify(NOTIFICATION_ID, createNotification(fullText))
         } catch (e: Exception) {
             Timber.w(e, "Failed to update notification")
         }

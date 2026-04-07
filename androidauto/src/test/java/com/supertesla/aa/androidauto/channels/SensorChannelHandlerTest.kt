@@ -53,10 +53,11 @@ class SensorChannelHandlerTest {
         val slot = slot<ByteArray>()
         verify { mux.sendEncrypted(ChannelId.SENSOR, SensorMessageType.EVENT_INDICATION, capture(slot)) }
 
-        val outer = ProtoEncoder.readFields(slot.captured)
-        val event = ProtoEncoder.readFields(outer[0].bytesValue!!)
-        val sType = event.first { it.fieldNumber == 1 }.intValue
-        assertEquals(13, sType, "Sensor type should be DRIVING_STATUS (13)")
+        // SensorBatch format: field 13 = DrivingStatusData { field 1 = status }
+        val fields = ProtoEncoder.readFields(slot.captured)
+        val drivingStatus = fields.first { it.fieldNumber == 13 }
+        val inner = ProtoEncoder.readFields(drivingStatus.bytesValue!!)
+        assertEquals(0, inner.first { it.fieldNumber == 1 }.intValue, "Status should be UNRESTRICTED (0)")
     }
 
     // ===== PARKING_BRAKE (sensorType 7) =====
@@ -79,10 +80,11 @@ class SensorChannelHandlerTest {
         val slot = slot<ByteArray>()
         verify { mux.sendEncrypted(ChannelId.SENSOR, SensorMessageType.EVENT_INDICATION, capture(slot)) }
 
-        val outer = ProtoEncoder.readFields(slot.captured)
-        val event = ProtoEncoder.readFields(outer[0].bytesValue!!)
-        val sType = event.first { it.fieldNumber == 1 }.intValue
-        assertEquals(7, sType, "Sensor type should be PARKING_BRAKE (7)")
+        // SensorBatch format: field 7 = ParkingBrakeData { field 1 = is_parked }
+        val fields = ProtoEncoder.readFields(slot.captured)
+        val parkingBrake = fields.first { it.fieldNumber == 7 }
+        val inner = ProtoEncoder.readFields(parkingBrake.bytesValue!!)
+        assertEquals(1, inner.first { it.fieldNumber == 1 }.intValue, "Should be parked (1)")
     }
 
     // ===== NIGHT_MODE (sensorType 10) =====
@@ -94,10 +96,11 @@ class SensorChannelHandlerTest {
         val slot = slot<ByteArray>()
         verify { mux.sendEncrypted(ChannelId.SENSOR, SensorMessageType.EVENT_INDICATION, capture(slot)) }
 
-        val outer = ProtoEncoder.readFields(slot.captured)
-        val event = ProtoEncoder.readFields(outer[0].bytesValue!!)
-        val sType = event.first { it.fieldNumber == 1 }.intValue
-        assertEquals(10, sType, "Sensor type should be NIGHT_MODE (10)")
+        // SensorBatch format: field 10 = NightModeData { field 1 = is_night }
+        val fields = ProtoEncoder.readFields(slot.captured)
+        val nightMode = fields.first { it.fieldNumber == 10 }
+        val inner = ProtoEncoder.readFields(nightMode.bytesValue!!)
+        assertEquals(1, inner.first { it.fieldNumber == 1 }.intValue, "Should be night (1)")
     }
 
     // ===== LOCATION (sensorType 1) =====

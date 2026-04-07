@@ -138,18 +138,13 @@ class ServiceDiscoveryTest {
     }
 
     @Test
-    fun `buildDrivingStatusEvent wraps status in nested message`() {
+    fun `buildDrivingStatusEvent uses SensorBatch field 13`() {
         val data = ServiceDiscovery.buildDrivingStatusEvent(0)
-        val outer = ProtoEncoder.readFields(data)
-        assertEquals(1, outer.size)
-        assertEquals(1, outer[0].fieldNumber) // event wrapper
+        val fields = ProtoEncoder.readFields(data)
+        assertEquals(1, fields.size)
+        assertEquals(13, fields[0].fieldNumber, "Should be SensorBatch field 13 (driving_status_data)")
 
-        val event = ProtoEncoder.readFields(outer[0].bytesValue!!)
-        val sensorType = event.first { it.fieldNumber == 1 }.intValue
-        assertEquals(13, sensorType, "Sensor type should be DRIVING_STATUS (13)")
-
-        val drivingStatus = event.first { it.fieldNumber == 4 }
-        val dsFields = ProtoEncoder.readFields(drivingStatus.bytesValue!!)
+        val dsFields = ProtoEncoder.readFields(fields[0].bytesValue!!)
         assertEquals(0L, dsFields.first { it.fieldNumber == 1 }.varintValue, "Status should be UNRESTRICTED (0)")
     }
 

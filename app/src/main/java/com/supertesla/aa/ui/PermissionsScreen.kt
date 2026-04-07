@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.net.VpnService
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -59,13 +58,9 @@ fun PermissionsScreen(onBack: () -> Unit = {}, onAllGranted: () -> Unit = {}) {
         ActivityResultContracts.RequestPermission()
     ) { refreshKey++ }
 
-    val vpnLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { refreshKey++ }
-
     // Force recomposition on refresh
     val permissions = remember(refreshKey) {
-        buildPermissionList(context, btLauncher, locationLauncher, micLauncher, notifLauncher, vpnLauncher)
+        buildPermissionList(context, btLauncher, locationLauncher, micLauncher, notifLauncher)
     }
 
     val allRequired = permissions.filter { !it.isOptional }
@@ -200,8 +195,7 @@ private fun buildPermissionList(
     btLauncher: androidx.activity.result.ActivityResultLauncher<String>,
     locationLauncher: androidx.activity.result.ActivityResultLauncher<String>,
     micLauncher: androidx.activity.result.ActivityResultLauncher<String>,
-    notifLauncher: androidx.activity.result.ActivityResultLauncher<String>,
-    vpnLauncher: androidx.activity.result.ActivityResultLauncher<Intent>
+    notifLauncher: androidx.activity.result.ActivityResultLauncher<String>
 ): List<PermissionItem> {
     val items = mutableListOf<PermissionItem>()
 
@@ -256,16 +250,6 @@ private fun buildPermissionList(
             context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             })
-        }
-    )
-
-    // VPN
-    items += PermissionItem(
-        name = "VPN service",
-        isGranted = { VpnService.prepare(context) == null },
-        request = {
-            val prepareIntent = VpnService.prepare(context)
-            if (prepareIntent != null) vpnLauncher.launch(prepareIntent)
         }
     )
 

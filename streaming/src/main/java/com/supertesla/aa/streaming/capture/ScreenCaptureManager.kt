@@ -27,7 +27,7 @@ class ScreenCaptureManager(
     private val fps: Int = 30,
     private val bitrate: Int = 4_000_000
 ) {
-    /** Shared MediaProjection — exposed so WebRTC can create its own VirtualDisplay. */
+    /** Shared MediaProjection instance. */
     var mediaProjection: MediaProjection? = null
         private set
     private var virtualDisplay: VirtualDisplay? = null

@@ -3,7 +3,6 @@
 package com.supertesla.aa.ui.wizard
 
 import android.content.Intent
-import android.net.VpnService
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -72,11 +71,6 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
             pagerState.scrollToPage(2) // Advance to Bluetooth Audio page
         }
     }
-
-    var vpnGranted by remember { mutableStateOf(VpnService.prepare(context) == null) }
-    val vpnLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { vpnGranted = true }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -147,13 +141,7 @@ fun SetupWizardScreen(onComplete: () -> Unit) {
                 Button(
                     onClick = {
                         if (isLastPage) {
-                            if (!vpnGranted) {
-                                val prepareIntent = VpnService.prepare(context)
-                                if (prepareIntent != null) vpnLauncher.launch(prepareIntent)
-                                else { vpnGranted = true; onComplete() }
-                            } else {
-                                onComplete()
-                            }
+                            onComplete()
                         } else {
                             scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                         }

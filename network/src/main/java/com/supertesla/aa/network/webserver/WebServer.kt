@@ -22,12 +22,13 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import com.supertesla.aa.network.webrtc.SignalingHandler
-import com.supertesla.aa.network.webrtc.WebRtcManager
 import com.supertesla.aa.network.websocket.TouchInputRelay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import timber.log.Timber
 
 class WebServer(
@@ -36,6 +37,7 @@ class WebServer(
 ) {
     private var server: ApplicationEngine? = null
     private var serverPort80: ApplicationEngine? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     var videoStreamHandler: VideoStreamHandler? = null
     /** Stable video flow — lives for the entire server lifetime. Emit into this. */
     val videoSharedFlow = kotlinx.coroutines.flow.MutableSharedFlow<ByteArray>(
@@ -55,7 +57,7 @@ class WebServer(
         set(value) {
             if (value != null) {
                 videoFlowReady = true
-                kotlinx.coroutines.GlobalScope.launch {
+                scope.launch {
                     value.collect { videoSharedFlow.emit(it) }
                 }
             }
@@ -68,11 +70,9 @@ class WebServer(
     var configUseBt: Boolean = true
 
     var touchInputRelay: TouchInputRelay? = null
-    var signalingHandler: SignalingHandler? = null
     var onClientConnected: (() -> Unit)? = null
     /** Callback for control actions from browser (START, STOP, ACK, PING, REQUEST_KEYFRAME, etc.) */
     var onAction: ((action: String, json: String) -> Unit)? = null
-    var diagnosticInfo: (() -> String)? = null
     /** The internal port Ktor actually binds to. */
     var internalPort: Int = 0
         private set
@@ -157,9 +157,8 @@ class WebServer(
                     val clients = handler?.connectedClients ?: 0
                     val frames = handler?.totalFramesSent ?: 0
                     val hasVideoFlow = videoFlowReady
-                    val signaling = signalingHandler != null
                     call.respondText(
-                        """{"status":"running","version":"0.1.0","videoClients":$clients,"framesSent":$frames,"hasVideoFlow":$hasVideoFlow,"hasSignaling":$signaling}""",
+                        """{"status":"running","videoClients":$clients,"framesSent":$frames,"hasVideoFlow":$hasVideoFlow}""",
                         ContentType.Application.Json
                     )
                 }
@@ -176,11 +175,6 @@ class WebServer(
                         """{"width":$videoWidth,"height":$videoHeight,"widthMargin":$wMargin,"heightMargin":$hMargin,"port":${configWsPort ?: port},"resolution":$configResolution,"version":1,"usebt":$configUseBt,"debug":false}""",
                         ContentType.Application.Json
                     )
-                }
-
-                get("/diag") {
-                    val info = diagnosticInfo?.invoke() ?: "{}"
-                    call.respondText(info, ContentType.Application.Json)
                 }
 
                 // MJPEG fallback stream
@@ -209,9 +203,6 @@ class WebServer(
                         }
                     }
                 }
-
-                // WebRTC signaling endpoints
-                signalingHandler?.registerRoutes(this)
 
                 // Unified WebSocket: video streaming (binary out) + touch events (text in)
                 webSocket("/ws") {
@@ -322,6 +313,7 @@ class WebServer(
 
     fun stop() {
         Timber.i("Stopping web server")
+        scope.cancel()
         serverPort80?.stop(500, 1000)
         serverPort80 = null
         server?.stop(1000, 2000)

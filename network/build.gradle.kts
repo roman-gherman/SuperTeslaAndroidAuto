@@ -52,9 +52,6 @@ dependencies {
     implementation(libs.ktor.serialization.json)
     implementation(libs.kotlinx.serialization.json)
 
-    // WebRTC
-    implementation(libs.webrtc)
-
     // WebSocket Server (for TaaDa-style 3-port relay)
     api(libs.java.websocket)
 

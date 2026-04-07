@@ -363,6 +363,26 @@ function cacheCodecData(roomData, bytes) {
   }
 }
 
+// --- WebSocket ping/pong keepalive (prevents Cloud Run idle timeout) ---
+const KEEPALIVE_INTERVAL_MS = 30000;
+
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log('Keepalive: terminating unresponsive client');
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, KEEPALIVE_INTERVAL_MS);
+
+// Mark all new connections as alive and track pong responses
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+});
+
 // --- Cleanup ---
 setInterval(() => {
   const now = Date.now();
