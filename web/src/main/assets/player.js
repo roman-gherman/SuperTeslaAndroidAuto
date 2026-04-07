@@ -364,10 +364,17 @@
                             console.log('Approved! Session key saved for room ' + relayRoom);
                         }
                         setStatus('connected', 'Connected');
+                        // Update splash to show connecting state
+                        if (splash) {
+                            splash.querySelector('h1').textContent = 'SuperTesla Android Auto';
+                            splash.querySelector('p').textContent = 'Starting stream...';
+                        }
                         // Send START to begin video
                         if (ws && ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({ action: 'START' }));
                         }
+                        // Setup touch
+                        if (window.SuperTeslaTouch) window.SuperTeslaTouch.setWebSocket(ws);
                     } else if (msg.type === 'denied') {
                         setStatus('', 'Connection denied by phone');
                         if (splash) {
