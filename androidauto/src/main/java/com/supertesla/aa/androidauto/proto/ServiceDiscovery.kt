@@ -130,7 +130,7 @@ object ServiceDiscovery {
                         else -> 5
                     }
                     ProtoEncoder.writeVarintField(vc, 1, codecRes.toLong()) // codec_resolution
-                    ProtoEncoder.writeVarintField(vc, 2, 1) // frame_rate = VIDEO_FPS_24(1)
+                    ProtoEncoder.writeVarintField(vc, 2, 2) // frame_rate = VIDEO_FPS_30(2)
                     ProtoEncoder.writeVarintField(vc, 3, videoConfig.marginWidth.toLong())  // width_margin
                     ProtoEncoder.writeVarintField(vc, 4, videoConfig.marginHeight.toLong()) // height_margin
                     ProtoEncoder.writeVarintField(vc, 5, videoConfig.density.toLong())      // density
