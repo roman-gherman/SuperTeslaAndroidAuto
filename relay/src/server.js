@@ -221,6 +221,8 @@ wss.on('connection', (ws, req) => {
               if (roomData.teslaWs) { try { roomData.teslaWs.close(4001, 'replaced'); } catch(e) {} }
               roomData.teslaWs = roomData.pendingTesla;
               roomData.pendingTesla = null;
+              // Set up message forwarding (touch events, etc.)
+              setupTeslaHandlers(roomData.teslaWs, roomData, roomId);
               // Send cached config + SPS (no stale IDR)
               if (roomData.config) roomData.teslaWs.send(JSON.stringify(roomData.config));
               if (roomData.codecConfig) roomData.teslaWs.send(roomData.codecConfig);
