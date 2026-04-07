@@ -213,6 +213,10 @@ wss.on('connection', (ws, req) => {
               if (roomData.config) roomData.teslaWs.send(JSON.stringify(roomData.config));
               if (roomData.codecConfig) roomData.teslaWs.send(roomData.codecConfig);
               if (roomData.idr) roomData.teslaWs.send(roomData.idr);
+              // Ask phone for fresh keyframe so Tesla can decode immediately
+              if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
+                roomData.phoneWs.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
+              }
               return;
             }
           }
@@ -289,6 +293,8 @@ wss.on('connection', (ws, req) => {
 
       if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
         roomData.phoneWs.send(JSON.stringify({ type: 'tesla_connected' }));
+        // Request fresh keyframe so Tesla can decode immediately
+        roomData.phoneWs.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
       }
 
       setupTeslaHandlers(ws, roomData, roomId);
