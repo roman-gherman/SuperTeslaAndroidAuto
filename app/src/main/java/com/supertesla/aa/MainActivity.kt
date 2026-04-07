@@ -3,7 +3,6 @@ package com.supertesla.aa
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -106,13 +105,6 @@ class MainActivity : ComponentActivity() {
                                     color = TeslaGray
                                 )
                                 Spacer(Modifier.height(40.dp))
-                                Text(
-                                    text = "Turn on your WiFi hotspot,\nthen tap Start.",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = TeslaWhite.copy(alpha = 0.8f),
-                                    textAlign = TextAlign.Center
-                                )
-
                                 Spacer(Modifier.height(48.dp))
 
                                 // Start button
@@ -135,25 +127,6 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 Spacer(Modifier.height(16.dp))
-
-                                // Hotspot settings
-                                OutlinedButton(
-                                    onClick = {
-                                        startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(56.dp),
-                                    shape = MaterialTheme.shapes.medium,
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TeslaGray)
-                                ) {
-                                    Text(
-                                        "Hotspot Settings",
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                }
-
-                                Spacer(Modifier.height(12.dp))
 
                                 TextButton(
                                     onClick = { screen = "main" },

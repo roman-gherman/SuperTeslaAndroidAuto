@@ -6,10 +6,7 @@ import timber.log.Timber
 
 /**
  * Receives touch events from the Tesla browser via WebSocket,
- * transforms normalized coordinates to AA display pixels,
- * and forwards them to either:
- * - AA protocol (InputChannelHandler) in relay mode
- * - AccessibilityService (TouchInjectionService) in screen mirror mode
+ * transforms coordinates and forwards them to AA protocol.
  *
  * Supports two touch event formats:
  * 1. Simple: {"type":"touch", "action":"down", "x":0.5, "y":0.5, "pointerId":0}
@@ -38,19 +35,33 @@ class TouchInputRelay(
 
     private val json = Json { ignoreUnknownKeys = true }
     private var touchListener: TouchListener? = null
+    private var multiTouchListener: MultiTouchListener? = null
     private var eventCount = 0L
 
     interface TouchListener {
         fun onTouch(action: Int, x: Int, y: Int, pointerId: Int)
     }
 
+    /**
+     * Listener for batched multi-touch events.
+     * action: AA action (0=DOWN, 1=UP, 2=MOVE, 5=POINTER_DOWN, 6=POINTER_UP)
+     * actionIndex: index of the pointer that triggered POINTER_DOWN/POINTER_UP
+     * pointers: all currently active pointers
+     */
+    interface MultiTouchListener {
+        fun onMultiTouch(action: Int, actionIndex: Int, pointers: List<TouchPoint>)
+    }
+
     fun setTouchListener(listener: TouchListener) {
         touchListener = listener
     }
 
+    fun setMultiTouchListener(listener: MultiTouchListener) {
+        multiTouchListener = listener
+    }
+
     /**
      * Process a WebSocket text message that may contain a touch event.
-     * Supports both simple format and TaaDa MULTITOUCH format.
      * Returns true if the message was handled as a touch event.
      */
     fun handleMessage(message: String): Boolean {
@@ -62,9 +73,7 @@ class TouchInputRelay(
             } ?: return false
 
             when {
-                // TaaDa MULTITOUCH format
                 action.startsWith("MULTITOUCH_") -> handleMultiTouchMessage(action, obj)
-                // Simple touch format
                 else -> handleSimpleTouchMessage(message)
             }
         } catch (e: Exception) {
@@ -91,7 +100,11 @@ class TouchInputRelay(
         val aaX = (event.x * displayWidth).toInt().coerceIn(0, displayWidth - 1)
         val aaY = (event.y * displayHeight).toInt().coerceIn(0, displayHeight - 1)
 
-        touchListener?.onTouch(aaAction, aaX, aaY, event.pointerId)
+        if (multiTouchListener != null) {
+            multiTouchListener?.onMultiTouch(aaAction, 0, listOf(TouchPoint(event.pointerId, aaX, aaY)))
+        } else {
+            touchListener?.onTouch(aaAction, aaX, aaY, event.pointerId)
+        }
         trackEvent()
         return true
     }
@@ -104,11 +117,11 @@ class TouchInputRelay(
         action: String,
         obj: kotlinx.serialization.json.JsonObject
     ): Boolean {
-        val aaAction = when (action) {
-            "MULTITOUCH_DOWN" -> ACTION_DOWN
-            "MULTITOUCH_MOVE" -> ACTION_MOVE
-            "MULTITOUCH_UP" -> ACTION_UP
-            "MULTITOUCH_CANCEL" -> ACTION_UP
+        val browserAction = when (action) {
+            "MULTITOUCH_DOWN" -> BROWSER_DOWN
+            "MULTITOUCH_MOVE" -> BROWSER_MOVE
+            "MULTITOUCH_UP" -> BROWSER_UP
+            "MULTITOUCH_CANCEL" -> BROWSER_UP
             else -> return false
         }
 
@@ -124,18 +137,46 @@ class TouchInputRelay(
             json.decodeFromJsonElement(TouchPoint.serializer(), elem)
         } ?: touches
 
-        // Send each touch point. For multi-touch, use the allTouches list.
-        val pointsToSend = if (allTouches.isNotEmpty()) allTouches else touches
-        for (point in pointsToSend) {
-            val x = point.x.coerceIn(0, displayWidth - 1)
-            val y = point.y.coerceIn(0, displayHeight - 1)
-            touchListener?.onTouch(aaAction, x, y, point.id)
+        // Clamp coordinates
+        val clampedAll = allTouches.map { p ->
+            TouchPoint(p.id, p.x.coerceIn(0, displayWidth - 1), p.y.coerceIn(0, displayHeight - 1))
+        }
+        val clampedChanged = touches.map { p ->
+            TouchPoint(p.id, p.x.coerceIn(0, displayWidth - 1), p.y.coerceIn(0, displayHeight - 1))
         }
 
-        // If no points, send at least the first touch
-        if (pointsToSend.isEmpty() && touches.isNotEmpty()) {
-            val point = touches.first()
-            touchListener?.onTouch(aaAction, point.x, point.y, point.id)
+        if (multiTouchListener != null) {
+            // Map to proper AA action with multi-touch awareness
+            val aaAction = mapToAaAction(browserAction, allTouches.size)
+
+            // For POINTER_DOWN/POINTER_UP, find the index of the changed pointer in allTouches
+            val actionIndex = if (aaAction == ACTION_POINTER_DOWN || aaAction == ACTION_POINTER_UP) {
+                val changedId = clampedChanged.firstOrNull()?.id ?: 0
+                clampedAll.indexOfFirst { it.id == changedId }.coerceAtLeast(0)
+            } else {
+                0
+            }
+
+            // Send all pointers as a batch. For UP/CANCEL, include the releasing pointer too
+            val pointers = if (browserAction == BROWSER_UP && clampedAll.isEmpty()) {
+                clampedChanged // On final UP, allTouches is empty; send the released pointer
+            } else {
+                clampedAll.ifEmpty { clampedChanged }
+            }
+
+            multiTouchListener?.onMultiTouch(aaAction, actionIndex, pointers)
+        } else {
+            // Legacy single-pointer fallback
+            val aaAction = when (browserAction) {
+                BROWSER_DOWN -> ACTION_DOWN
+                BROWSER_MOVE -> ACTION_MOVE
+                BROWSER_UP -> ACTION_UP
+                else -> ACTION_DOWN
+            }
+            val pointsToSend = if (clampedAll.isNotEmpty()) clampedAll else clampedChanged
+            for (point in pointsToSend) {
+                touchListener?.onTouch(aaAction, point.x, point.y, point.id)
+            }
         }
 
         trackEvent()
@@ -153,5 +194,23 @@ class TouchInputRelay(
         const val ACTION_DOWN = 0
         const val ACTION_UP = 1
         const val ACTION_MOVE = 2
+        const val ACTION_POINTER_DOWN = 5
+        const val ACTION_POINTER_UP = 6
+
+        private const val BROWSER_DOWN = 0
+        private const val BROWSER_MOVE = 1
+        private const val BROWSER_UP = 2
+
+        /**
+         * Map browser touch action to AA PointerAction, accounting for multi-touch.
+         */
+        fun mapToAaAction(browserAction: Int, allTouchCount: Int): Int {
+            return when (browserAction) {
+                BROWSER_DOWN -> if (allTouchCount > 1) ACTION_POINTER_DOWN else ACTION_DOWN
+                BROWSER_UP -> if (allTouchCount > 0) ACTION_POINTER_UP else ACTION_UP
+                BROWSER_MOVE -> ACTION_MOVE
+                else -> ACTION_DOWN
+            }
+        }
     }
 }

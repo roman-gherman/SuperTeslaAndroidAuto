@@ -211,6 +211,12 @@ class WebServer(
                     val handler = videoStreamHandler
                     val relay = touchInputRelay
 
+                    // Send config over WebSocket so relay-mode clients get correct resolution
+                    try {
+                        val cfgJson = """{"type":"config","width":$configVideoWidth,"height":$configVideoHeight}"""
+                        send(Frame.Text(cfgJson))
+                    } catch (_: Exception) {}
+
                     // Stream video: wait until flow is ready, then collect from the
                     // stable shared flow (survives AA reconnects).
                     val videoJob = launch {

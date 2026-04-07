@@ -60,6 +60,10 @@ class InputChannelHandler(
      * @param pointers all active pointers with their coordinates
      */
     fun sendMultiTouchEvent(action: Int, actionIndex: Int, pointers: List<TouchPointer>) {
+        touchEventCount++
+        if (touchEventCount <= 5 || touchEventCount % 50 == 0L) {
+            Timber.d("Input: sendMultiTouch #$touchEventCount action=$action idx=$actionIndex ptrs=${pointers.size} ${pointers.firstOrNull()?.let { "x=${it.x} y=${it.y} id=${it.id}" } ?: ""}")
+        }
         val timestamp = try {
             android.os.SystemClock.elapsedRealtime() * 1_000_000L
         } catch (_: Exception) {

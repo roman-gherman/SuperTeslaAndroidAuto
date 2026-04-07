@@ -231,28 +231,6 @@ private fun buildPermissionList(
         )
     }
 
-    // Display over apps (SYSTEM_ALERT_WINDOW)
-    items += PermissionItem(
-        name = "Display over apps",
-        isGranted = { Settings.canDrawOverlays(context) },
-        request = {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
-        }
-    )
-
-    // Modify system settings (WRITE_SETTINGS)
-    items += PermissionItem(
-        name = "Modify system settings",
-        isGranted = { Settings.System.canWrite(context) },
-        request = {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
-        }
-    )
-
     // Battery optimization
     items += PermissionItem(
         name = "Battery optimization (unrestricted)",

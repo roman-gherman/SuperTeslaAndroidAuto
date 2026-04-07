@@ -27,11 +27,6 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     // Video
     var resolution by remember { mutableStateOf(prefs.getString("resolution", "720p") ?: "720p") }
-    var dpi by remember { mutableIntStateOf(prefs.getInt("dpi", 120)) }
-    var streamingMode by remember { mutableStateOf(prefs.getString("streaming_mode", "auto") ?: "auto") }
-
-    // Driving
-    var rightHandDrive by remember { mutableStateOf(prefs.getBoolean("rhd", false)) }
 
     // Audio
     var useBluetooth by remember { mutableStateOf(prefs.getBoolean("usebt", true)) }
@@ -44,7 +39,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var versionTapCount by remember { mutableIntStateOf(0) }
     var lastTapTime by remember { mutableLongStateOf(0L) }
 
-    fun saveAndNotifyRestart(key: String, value: Any) {
+    fun saveAndRestartService(key: String, value: Any) {
         val editor = prefs.edit()
         when (value) {
             is String -> editor.putString(key, value)
@@ -52,7 +47,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             is Int -> editor.putInt(key, value)
         }
         editor.apply()
-        Toast.makeText(context, "Restart service to apply changes", Toast.LENGTH_SHORT).show()
+        // Auto-restart service to apply pipeline changes
+        if (TransporterService.isActiveFlow.value) {
+            TransporterService.stop(context)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                TransporterService.start(context)
+            }, 500)
+            Toast.makeText(context, "Restarting service...", Toast.LENGTH_SHORT).show()
+        }
     }
 
     Surface(
@@ -100,34 +102,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 HeadUnitConfig.RESOLUTION_PRESETS.keys.toList()
             ) {
                 resolution = it
-                saveAndNotifyRestart("resolution", it)
-            }
-
-            SliderSetting(
-                label = "Display Density (DPI)",
-                value = dpi.toFloat(),
-                valueRange = 100f..300f,
-                steps = 19, // (300-100)/10 - 1 = 19 steps for increments of 10
-                valueLabel = "$dpi",
-                onValueChange = {
-                    dpi = (it / 10).toInt() * 10 // snap to 10s
-                },
-                onValueChangeFinished = {
-                    saveAndNotifyRestart("dpi", dpi)
-                }
-            )
-
-            DropdownSetting("Streaming Mode", streamingMode, listOf("auto", "mse", "mjpeg")) {
-                streamingMode = it; prefs.edit().putString("streaming_mode", it).apply()
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // ===== Driving =====
-            SectionHeader("Driving")
-            SwitchSetting("Right-Hand Drive", rightHandDrive) {
-                rightHandDrive = it
-                saveAndNotifyRestart("rhd", it)
+                saveAndRestartService("resolution", it)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -136,7 +111,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             SectionHeader("Audio")
             SwitchSetting("Bluetooth Audio (skip AA audio channels)", useBluetooth) {
                 useBluetooth = it
-                saveAndNotifyRestart("usebt", it)
+                saveAndRestartService("usebt", it)
             }
             ActionSetting("Bluetooth Settings") {
                 context.startActivity(
@@ -202,8 +177,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Text("Version", style = MaterialTheme.typography.bodyLarge, color = TeslaWhite)
                 Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.bodyMedium, color = TeslaGray)
             }
-            InfoSetting("Hotspot IP", com.supertesla.aa.core.config.AppConfig.detectedHotspotIp ?: "Not detected")
-
             Spacer(Modifier.height(40.dp))
         }
     }

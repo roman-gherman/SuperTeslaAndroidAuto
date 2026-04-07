@@ -195,12 +195,10 @@ class TransporterService : Service() {
                 val settingsPrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
                 val configMap = mapOf(
                     "resolution" to (settingsPrefs.getString("resolution", "720p") ?: "720p"),
-                    "dpi" to settingsPrefs.getInt("dpi", 120).toString(),
-                    "rhd" to settingsPrefs.getBoolean("rhd", false).toString(),
                     "usebt" to settingsPrefs.getBoolean("usebt", false).toString()
                 )
                 val config = HeadUnitConfig.fromMap(configMap)
-                Timber.i("PIPELINE: Config — ${config.videoWidth}x${config.videoHeight} @ ${config.videoDensity}dpi, rhd=${config.rightHandDrive}, bt=${config.useBluetooth}")
+                Timber.i("PIPELINE: Config — ${config.videoWidth}x${config.videoHeight} @ ${config.videoDensity}dpi, bt=${config.useBluetooth}")
 
                 // 2. Force-kill any lingering AA car process from previous session
                 Timber.i("PIPELINE: Step 2 — Cleaning up old AA sessions")
@@ -269,6 +267,16 @@ class TransporterService : Service() {
                             isConnected = true
                             reconnectPolicy.reset()
                             updateNotification("Streaming")
+                            // Auto-enable video when AA is ready and relay is connected
+                            if (relayConnectedFlow.value) {
+                                Timber.i("AA streaming + relay connected — auto-enabling video focus")
+                                nalStreamManager?.toggleVideoFocus(true)
+                                serviceScope.launch {
+                                    // Short delay for AA to finish channel setup, then request keyframe
+                                    delay(500)
+                                    nalStreamManager?.requestKeyFrame()
+                                }
+                            }
                         }
                         is AAHeadUnitEmulator.State.Error -> {
                             // Connection dropped — stop heartbeat immediately so it
@@ -434,6 +442,12 @@ class TransporterService : Service() {
                         // Wire AA video to Ktor web server
                         launch {
                             emu.videoHandler?.let { handler ->
+                                // Log actual encoded resolution from SPS (for diagnostics)
+                                handler.onResolutionDetected = { w, h ->
+                                    Timber.i("SESSION: Actual encoded resolution: ${w}x${h}")
+                                    server.configVideoWidth = w
+                                    server.configVideoHeight = h
+                                }
                                 // Set videoFlow — the setter pipes into videoSharedFlow
                                 server.videoFlow = handler.videoFrames.map { it.data }
                                 Timber.i("SESSION: Video flow wired to Ktor web server")

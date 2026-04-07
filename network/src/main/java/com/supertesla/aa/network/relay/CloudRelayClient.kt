@@ -29,7 +29,8 @@ class CloudRelayClient(
     val onApprovalRequest: ((CloudRelayClient) -> Unit)? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var client: WebSocketClient? = null
+    @Volatile var client: WebSocketClient? = null
+        internal set
     private var flowJobs: Job? = null
     private var reconnectJob: Job? = null
 
@@ -42,6 +43,9 @@ class CloudRelayClient(
 
     /** Config JSON to send to Tesla on connect */
     @Volatile var configJson: String? = null
+
+    /** Gate: drop P-frames until first SPS/IDR is sent. Reset on Tesla reconnect. */
+    @Volatile var keyframeGateOpen: Boolean = false
 
     /** Approve a pending Tesla connection. Generates a new session key. */
     fun approveConnection() {
@@ -112,12 +116,12 @@ class CloudRelayClient(
                 Timber.i("Relay: connected to room $roomId")
                 isConnected = true
 
-                // Send config
+                // Send CONFIG once — relay server caches it and replays
+                // to Tesla on each browser connect/refresh.
                 configJson?.let { send(it) }
 
-                // Send cached codec config + IDR
-                cachedCodecConfig?.let { send(it) }
-                cachedIdr?.let { send(it) }
+                // Auto-trigger START — Tesla may already be connected
+                onAction?.invoke("START", "")
 
                 latch.complete(Unit)
             }
@@ -170,11 +174,30 @@ class CloudRelayClient(
 
     private fun startFlowCollection(ws: WebSocketClient) {
         flowJobs = scope.launch {
-            // Collect video frames
+            // Collect video frames — gate on keyframe to prevent decode errors.
+            // The browser's decoder requires a keyframe (IDR) as the first frame
+            // after configure(). If we send P-frames before an IDR, the browser
+            // gets "key frame required after configure()" errors.
+            // Fix: drop all P-frames until we've sent an SPS or IDR.
+            // Reset the gate when Tesla browser reconnects (tesla_connected).
             launch {
                 videoFlow.collect { nalData ->
                     if (ws.isOpen && nalData.isNotEmpty()) {
-                        ws.send(VideoStreamHandler.prefixVideo(nalData))
+                        // Cache SPS+PPS and IDR for replay on Tesla reconnect
+                        val nalType = findFirstNalType(nalData)
+                        if (nalType == 7) cachedCodecConfig = nalData.copyOf()
+                        else if (nalType == 5) cachedIdr = nalData.copyOf()
+
+                        if (!keyframeGateOpen) {
+                            if (nalType == 7 || nalType == 5) {
+                                keyframeGateOpen = true
+                                Timber.d("Relay: gate opened by live NAL type=$nalType (${nalData.size}b)")
+                                ws.send(VideoStreamHandler.prefixVideo(nalData))
+                            }
+                            // Drop P-frames until keyframe
+                        } else {
+                            ws.send(VideoStreamHandler.prefixVideo(nalData))
+                        }
                     }
                 }
             }
@@ -219,7 +242,34 @@ class CloudRelayClient(
                     return
                 }
                 "tesla_connected" -> {
-                    Timber.i("Relay: Tesla connected")
+                    val hasSps = cachedCodecConfig != null
+                    val hasIdr = cachedIdr != null
+                    Timber.i("Relay: Tesla connected — gate=${keyframeGateOpen}, hasSPS=$hasSps, hasIDR=$hasIdr")
+                    // Reset gate so P-frames are dropped until keyframe
+                    keyframeGateOpen = false
+                    // Don't send CONFIG here — relay server caches it from onOpen
+                    // and auto-sends to Tesla. Sending again causes double-CONFIG
+                    // which reconfigures the decoder mid-stream.
+
+                    // Replay cached SPS+PPS and IDR so browser can decode immediately
+                    cachedCodecConfig?.let {
+                        try {
+                            client?.send(VideoStreamHandler.prefixVideo(it))
+                            Timber.i("Relay: replayed SPS+PPS (${it.size}b)")
+                        } catch (e: Exception) { Timber.w("Relay: SPS replay failed: ${e.message}") }
+                    }
+                    cachedIdr?.let {
+                        try {
+                            client?.send(VideoStreamHandler.prefixVideo(it))
+                            keyframeGateOpen = true
+                            Timber.i("Relay: replayed IDR (${it.size}b), gate opened")
+                        } catch (e: Exception) { Timber.w("Relay: IDR replay failed: ${e.message}") }
+                    }
+                    if (!hasIdr) {
+                        Timber.w("Relay: no cached IDR — requesting keyframe from AA")
+                    }
+                    // Trigger START in case video focus needs enabling
+                    onAction?.invoke("START", text)
                     return
                 }
                 "tesla_disconnected" -> {
@@ -239,6 +289,25 @@ class CloudRelayClient(
         } catch (_: Exception) {
             Timber.v("Relay: unhandled text: ${text.take(80)}")
         }
+    }
+
+    /**
+     * Find the NAL unit type of the first NAL in Annex B data.
+     * Returns the NAL type (7=SPS, 8=PPS, 5=IDR, 1=P-frame) or -1.
+     */
+    private fun findFirstNalType(data: ByteArray): Int {
+        // Look for start code 00 00 00 01 or 00 00 01
+        for (i in 0 until data.size - 4) {
+            if (data[i] == 0.toByte() && data[i + 1] == 0.toByte()) {
+                if (data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte()) {
+                    return data[i + 4].toInt() and 0x1F
+                }
+                if (data[i + 2] == 1.toByte()) {
+                    return data[i + 3].toInt() and 0x1F
+                }
+            }
+        }
+        return -1
     }
 
     fun disconnect() {

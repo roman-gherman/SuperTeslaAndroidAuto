@@ -103,10 +103,17 @@
                 hideSplash();
             },
             error: function(e) {
-                console.error('VideoDecoder error:', e);
+                console.error('VideoDecoder error:', e, '— resetting, will recover on next keyframe');
                 decoderConfigured = false;
                 cachedSps = null;
                 cachedPps = null;
+                // Close broken decoder so a fresh one is created
+                try { if (decoder && decoder.state !== 'closed') decoder.close(); } catch(_) {}
+                decoder = null;
+                // Request a keyframe to recover
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ action: 'REQUEST_KEYFRAME' }));
+                }
             }
         });
     }
@@ -142,8 +149,6 @@
         try {
             decoder.configure({
                 codec: codec,
-                codedWidth: 1280,
-                codedHeight: 720,
                 description: description,
                 optimizeForLatency: true
             });
@@ -349,7 +354,30 @@
             } else {
                 try {
                     var msg = JSON.parse(event.data);
-                    if (msg.type === 'status') {
+                    if (msg.type === 'config' || msg.action === 'CONFIG') {
+                        // Resolution config from server (works in relay mode too)
+                        if (msg.width && msg.height) {
+                            console.log('WS config: ' + msg.width + 'x' + msg.height);
+                            if (window.SuperTeslaTouch) {
+                                window.SuperTeslaTouch.DISPLAY_W = msg.width;
+                                window.SuperTeslaTouch.DISPLAY_H = msg.height;
+                            }
+                        }
+                        // Phone service (re)started — reset decoder and request fresh stream
+                        resetState();
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ action: 'START' }));
+                        }
+                        // Retry START after delays — AA may not be ready yet
+                        [2000, 5000, 10000].forEach(function(delay) {
+                            setTimeout(function() {
+                                if (ws && ws.readyState === WebSocket.OPEN && !decoderConfigured) {
+                                    console.log('Retrying START after ' + delay + 'ms');
+                                    ws.send(JSON.stringify({ action: 'START' }));
+                                }
+                            }, delay);
+                        });
+                    } else if (msg.type === 'status') {
                         setStatus('connected', msg.message || 'Connected');
                     } else if (msg.type === 'waiting_approval') {
                         setStatus('buffering', 'Waiting for phone approval...');

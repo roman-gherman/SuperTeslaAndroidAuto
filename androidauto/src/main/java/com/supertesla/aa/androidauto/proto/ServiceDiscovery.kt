@@ -75,8 +75,7 @@ object ServiceDiscovery {
             ProtoEncoder.writeStringField(hu, 7, huInfo.swBuild)    // sw_build
             ProtoEncoder.writeStringField(hu, 8, huInfo.swVersion)  // sw_version
         }
-        // Driver position (field 6): LEFT=0 (proto3 default, omitted), RIGHT=1
-        // TaaDa uses LEFT (0) which proto3 omits — don't write this field for LEFT
+
 
         // === Service 1: InputSourceService (field 4 in Service proto) ===
         ProtoEncoder.writeEmbeddedMessage(out, 1) { svc ->
@@ -122,8 +121,16 @@ object ServiceDiscovery {
                 // VideoConfiguration: 1=codec_resolution(enum), 2=frame_rate(enum),
                 //   3=width_margin, 4=height_margin, 5=density
                 ProtoEncoder.writeEmbeddedMessage(sink, 4) { vc ->
-                    ProtoEncoder.writeVarintField(vc, 1, 2) // codec_resolution = VIDEO_1280x720(2)
-                    ProtoEncoder.writeVarintField(vc, 2, 2) // frame_rate = VIDEO_FPS_30(2)
+                    // codec_resolution enum: 1=800x480, 2=1280x720, 3=1920x1080, 4=2560x1440, 5=3840x2160
+                    val codecRes = when {
+                        videoConfig.width <= 800 -> 1
+                        videoConfig.width <= 1280 -> 2
+                        videoConfig.width <= 1920 -> 3
+                        videoConfig.width <= 2560 -> 4
+                        else -> 5
+                    }
+                    ProtoEncoder.writeVarintField(vc, 1, codecRes.toLong()) // codec_resolution
+                    ProtoEncoder.writeVarintField(vc, 2, 1) // frame_rate = VIDEO_FPS_24(1)
                     ProtoEncoder.writeVarintField(vc, 3, videoConfig.marginWidth.toLong())  // width_margin
                     ProtoEncoder.writeVarintField(vc, 4, videoConfig.marginHeight.toLong()) // height_margin
                     ProtoEncoder.writeVarintField(vc, 5, videoConfig.density.toLong())      // density

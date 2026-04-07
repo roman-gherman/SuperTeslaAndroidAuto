@@ -29,9 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.supertesla.aa.core.config.AppConfig
 import com.supertesla.aa.core.model.AppState
-import com.supertesla.aa.core.model.HotspotState
 import com.supertesla.aa.service.TransporterService
 import com.supertesla.aa.ui.theme.*
 
@@ -45,7 +43,6 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
     val serviceConnected by TransporterService.isConnectedFlow.collectAsStateWithLifecycle()
     val serviceVideoActive by TransporterService.isVideoActiveFlow.collectAsStateWithLifecycle()
     val serviceStatus by TransporterService.statusText.collectAsStateWithLifecycle()
-    val hotspotState by TransporterService.hotspotStateFlow.collectAsStateWithLifecycle()
     val teslaUrl by TransporterService.teslaUrlFlow.collectAsStateWithLifecycle()
     val approvalPending by TransporterService.approvalPendingFlow.collectAsStateWithLifecycle()
 
@@ -69,22 +66,6 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
-            // Settings gear icon - top right
-            IconButton(
-                onClick = onSettings,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 12.dp)
-                    .size(48.dp)
-            ) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = TeslaGray,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -134,8 +115,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
             StatusCard(
                 serviceActive = serviceActive,
                 serviceConnected = serviceConnected,
-                serviceVideoActive = serviceVideoActive,
-                hotspotState = hotspotState
+                serviceVideoActive = serviceVideoActive
             )
 
             Spacer(Modifier.height(12.dp))
@@ -227,6 +207,21 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
 
             Spacer(Modifier.height(24.dp))
         }
+            // Settings gear icon - top right, rendered after Column so it's on top
+            IconButton(
+                onClick = onSettings,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 12.dp)
+                    .size(48.dp)
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = TeslaGray,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         } // close Box
     }
 }
@@ -235,8 +230,7 @@ fun MainScreen(viewModel: MainViewModel, onSettings: () -> Unit = {}, onPermissi
 private fun StatusCard(
     serviceActive: Boolean,
     serviceConnected: Boolean,
-    serviceVideoActive: Boolean,
-    hotspotState: HotspotState
+    serviceVideoActive: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -249,17 +243,6 @@ private fun StatusCard(
             StatusRow("Android Auto", serviceConnected, if (serviceConnected) "Connected" else "Waiting...")
             Spacer(Modifier.height(16.dp))
             StatusRow("Video", serviceVideoActive, if (serviceVideoActive) "Streaming" else "Off")
-            Spacer(Modifier.height(16.dp))
-            StatusRow(
-                label = "Hotspot",
-                isActive = hotspotState is HotspotState.Enabled || hotspotState is HotspotState.ClientConnected,
-                detail = when (hotspotState) {
-                    is HotspotState.ClientConnected -> "${hotspotState.clients.size} client(s)"
-                    is HotspotState.Enabled -> "Active"
-                    is HotspotState.Disabled -> "Off"
-                    is HotspotState.Unknown -> "Off"
-                }
-            )
         }
     }
 }
