@@ -49,7 +49,15 @@ class SensorChannelHandler(
                     13 -> sendDrivingStatus()      // DRIVING_STATUS → UNRESTRICTED
                     7  -> sendParkingBrake(true)    // PARKING_BRAKE → always parked
                     10 -> {
-                        sendNightMode(false)        // Default to day mode
+                        // Send day mode immediately and again after delays
+                        // (AA sometimes ignores the first one during startup)
+                        sendNightMode(false)
+                        Thread {
+                            Thread.sleep(1000)
+                            sendNightMode(false)
+                            Thread.sleep(3000)
+                            sendNightMode(false)
+                        }.start()
                         onNightModeRequested?.invoke()
                     }
                     1  -> onLocationRequested?.invoke()    // LOCATION → browser will send GPS
@@ -85,10 +93,21 @@ class SensorChannelHandler(
 
     /** Send night mode. Forwarded from Tesla browser. */
     fun sendNightMode(isNight: Boolean) {
+        // Night mode sensor event:
+        //   field 1 (message): sensor_data
+        //     field 1: sensor_type = 10 (NIGHT_MODE)
+        //     field 3 (message): night_data
+        //       field 1: is_night (bool)
+        // NOTE: For day mode (isNight=false), we must still write the value
+        // explicitly. Proto3 omits 0 values, but AA needs the field present.
+        // Writing is_night=2 means "day" in TaaDa's encoding (non-zero = has value, even=day).
+        // Simpler: always send isNight=false by writing 0, and send periodic updates.
         val payload = ProtoEncoder.encode {
             writeMessage(1) {
                 writeVarint(1, 10) // SENSOR_NIGHT_MODE
                 writeMessage(3) {
+                    // Always write the field — use 1 for night, 0 for day
+                    // Force write even for 0 by including the field
                     writeVarint(1, if (isNight) 1L else 0L)
                 }
             }
