@@ -92,6 +92,40 @@
         return out;
     }
 
+    // MJPEG fallback state (used when Tesla blocks WebCodecs while driving)
+    var mjpegMode = false;
+    var webCodecsFailCount = 0;
+
+    function processJpegFrame(payload) {
+        var blob = new Blob([payload], { type: 'image/jpeg' });
+        createImageBitmap(blob).then(function(bitmap) {
+            if (ctx) {
+                if (canvasEl.width !== bitmap.width || canvasEl.height !== bitmap.height) {
+                    canvasEl.width = bitmap.width;
+                    canvasEl.height = bitmap.height;
+                }
+                ctx.drawImage(bitmap, 0, 0);
+            }
+            bitmap.close();
+            hideSplash();
+        }).catch(function(e) {
+            console.warn('MJPEG decode error:', e);
+        });
+    }
+
+    function requestMjpegFallback() {
+        if (mjpegMode) return;
+        console.warn('WebCodecs blocked — switching to MJPEG fallback');
+        mjpegMode = true;
+        mode = 'mjpeg';
+        setStatus('connected', 'MJPEG: Switching...');
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'REQUEST_MJPEG' }));
+        }
+        if (decoder) { try { decoder.close(); } catch(e) {} decoder = null; }
+        decoderConfigured = false;
+    }
+
     var frameCount = 0;
     function createWebCodecsDecoder() {
         return new VideoDecoder({
@@ -109,9 +143,15 @@
                 }
                 frame.close();
                 hideSplash();
+                webCodecsFailCount = 0; // Reset on success
             },
             error: function(e) {
                 console.error('VideoDecoder error:', e);
+                webCodecsFailCount++;
+                if (webCodecsFailCount >= 3) {
+                    requestMjpegFallback();
+                    return;
+                }
                 decoderConfigured = false;
                 cachedSps = null;
                 cachedPps = null;
@@ -320,10 +360,12 @@
 
         ws.onopen = function() {
             setStatus('connected', mode.toUpperCase() + ': Connected');
-            // Don't reset reconnectDelay here — only reset after receiving actual video data
             if (window.SuperTeslaTouch) window.SuperTeslaTouch.setWebSocket(ws);
-            // Send START once — server will enable video focus
             ws.send(JSON.stringify({ action: 'START' }));
+            // Re-request MJPEG if we were in fallback mode
+            if (mjpegMode) {
+                ws.send(JSON.stringify({ action: 'REQUEST_MJPEG' }));
+            }
             // Start PING keepalive every 2 seconds (TaaDa compat)
             if (window._pingInterval) clearInterval(window._pingInterval);
             window._pingInterval = setInterval(function() {
@@ -341,10 +383,21 @@
                 var payload = raw.subarray(1);
 
                 if (type === 0x00) {
-                    // Video frame (H.264 NAL)
-                    processBinaryFrame(payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength));
+                    // Video frame (H.264 NAL) — skip if in MJPEG mode
+                    if (!mjpegMode) {
+                        processBinaryFrame(payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength));
+                    }
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ action: 'ACK' }));
+                    }
+                } else if (type === 0x04) {
+                    // MJPEG frame (JPEG image)
+                    processJpegFrame(payload);
+                    if (!mjpegMode) {
+                        mjpegMode = true;
+                        mode = 'mjpeg';
+                        setStatus('connected', 'MJPEG: Connected');
+                        console.log('Receiving MJPEG frames');
                     }
                 } else if (type >= 0x01 && type <= 0x03) {
                     // Audio PCM
@@ -446,6 +499,15 @@
     // ---- Start ----
     fetchConfig();
     canvasEl.style.display = 'block';
+
+    // Probe WebCodecs — if unavailable (old browser or Tesla driving block),
+    // switch to MJPEG mode before connecting
+    if (typeof VideoDecoder === 'undefined') {
+        console.warn('VideoDecoder not available — using MJPEG mode');
+        mjpegMode = true;
+        mode = 'mjpeg';
+    }
+
     connect();
 
     // ---- Debug API ----

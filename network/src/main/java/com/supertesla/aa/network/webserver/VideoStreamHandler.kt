@@ -82,8 +82,16 @@ class VideoStreamHandler(
         const val TYPE_AUDIO_MEDIA: Byte = 0x01
         const val TYPE_AUDIO_SPEECH: Byte = 0x02
         const val TYPE_AUDIO_SYSTEM: Byte = 0x03
+        const val TYPE_VIDEO_MJPEG: Byte = 0x04
 
         /** Prepend type prefix byte to a payload. */
+        fun prefixMjpeg(data: ByteArray): ByteArray {
+            val out = ByteArray(1 + data.size)
+            out[0] = TYPE_VIDEO_MJPEG
+            System.arraycopy(data, 0, out, 1, data.size)
+            return out
+        }
+
         fun prefixVideo(data: ByteArray): ByteArray {
             val out = ByteArray(1 + data.size)
             out[0] = TYPE_VIDEO

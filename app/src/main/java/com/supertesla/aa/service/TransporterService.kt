@@ -375,6 +375,8 @@ class TransporterService : Service() {
                 this@TransporterService.relayClient = relayClient
                 Companion.activeRelayClient = relayClient
                 relayClient.configJson = """{"action":"CONFIG","width":$videoWidth,"height":$videoHeight,"widthMargin":0,"heightMargin":0,"port":${AppConfig.SERVER_PORT},"resolution":1,"usebt":${config.useBluetooth}}"""
+                relayClient.videoWidth = videoWidth
+                relayClient.videoHeight = videoHeight
                 relayClient.connect()
                 Timber.i("PIPELINE: Cloud relay client started for room ${roomManager.roomId}")
 

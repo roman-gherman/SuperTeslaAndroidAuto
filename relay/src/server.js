@@ -200,6 +200,9 @@ wss.on('connection', (ws, req) => {
         const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
         if (bytes.length > 1 && bytes[0] === 0x00) {
           cacheCodecData(roomData, bytes);
+        } else if (bytes.length > 1 && bytes[0] === 0x04) {
+          // Cache latest MJPEG frame for instant display on Tesla reconnect
+          roomData.mjpegFrame = Buffer.from(bytes);
         }
         if (roomData.teslaWs && roomData.teslaWs.readyState === 1) {
           roomData.teslaWs.send(data, { binary: true });
@@ -299,10 +302,10 @@ wss.on('connection', (ws, req) => {
       roomData.teslaWs = ws;
       console.log(`Tesla connected (saved key): ${roomId}`);
 
-      // Send cached config + SPS (no IDR — it's stale and causes artifacts).
-      // Browser will silently skip P-frames until a fresh IDR arrives.
+      // Send cached config + SPS + MJPEG frame (if available)
       if (roomData.config) ws.send(JSON.stringify(roomData.config));
       if (roomData.codecConfig) ws.send(roomData.codecConfig);
+      if (roomData.mjpegFrame) ws.send(roomData.mjpegFrame);
 
       if (roomData.phoneWs && roomData.phoneWs.readyState === 1) {
         roomData.phoneWs.send(JSON.stringify({ type: 'tesla_connected' }));

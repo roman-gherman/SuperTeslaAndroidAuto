@@ -17,8 +17,8 @@ import java.io.ByteArrayOutputStream
 class MjpegStreamEncoder(
     private val width: Int,
     private val height: Int,
-    private val quality: Int = 75,
-    private val maxFps: Int = 30
+    private val quality: Int = 60,
+    private val maxFps: Int = 20
 ) {
     private var decoder: MediaCodec? = null
     private val nalParser = NalUnitParser()
@@ -37,6 +37,8 @@ class MjpegStreamEncoder(
                 val now = System.currentTimeMillis()
                 if (now - lastFrameTime < frameInterval) return@collect
 
+                // Collect JPEG results from NAL parsing (can't emit inside non-suspend lambda)
+                val jpegResults = mutableListOf<ByteArray>()
                 nalParser.feed(rawH264) { nalUnit ->
                     when (nalUnit.type) {
                         NalUnitParser.NalType.SPS, NalUnitParser.NalType.PPS -> {
@@ -51,12 +53,17 @@ class MjpegStreamEncoder(
                             if (configured) {
                                 val jpeg = decodeAndEncode(nalUnit)
                                 if (jpeg != null) {
-                                    lastFrameTime = System.currentTimeMillis()
+                                    jpegResults.add(jpeg)
                                 }
                             }
                         }
                         else -> {}
                     }
+                }
+                // Emit collected JPEGs
+                for (jpeg in jpegResults) {
+                    lastFrameTime = System.currentTimeMillis()
+                    emit(jpeg)
                 }
             }
         } finally {

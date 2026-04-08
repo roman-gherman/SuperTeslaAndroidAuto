@@ -47,6 +47,14 @@ class CloudRelayClient(
     /** Gate: drop P-frames until first SPS/IDR is sent. Reset on Tesla reconnect. */
     @Volatile var keyframeGateOpen: Boolean = false
 
+    /** MJPEG fallback mode: decode H.264 to JPEG on phone, bypass browser VideoDecoder. */
+    @Volatile var mjpegMode: Boolean = false
+    private var mjpegEncoder: com.supertesla.aa.streaming.video.MjpegStreamEncoder? = null
+
+    /** Video dimensions for MJPEG encoder. Set from TransporterService config. */
+    var videoWidth: Int = 1280
+    var videoHeight: Int = 720
+
     /** Approve a pending Tesla connection. Generates a new session key. */
     fun approveConnection() {
         val sessionKey = java.util.UUID.randomUUID().toString().replace("-", "").take(32)
@@ -175,29 +183,44 @@ class CloudRelayClient(
 
     private fun startFlowCollection(ws: WebSocketClient) {
         flowJobs = scope.launch {
-            // Collect video frames — gate on keyframe to prevent decode errors.
-            // The browser's decoder requires a keyframe (IDR) as the first frame
-            // after configure(). If we send P-frames before an IDR, the browser
-            // gets "key frame required after configure()" errors.
-            // Fix: drop all P-frames until we've sent an SPS or IDR.
-            // Reset the gate when Tesla browser reconnects (tesla_connected).
             launch {
-                videoFlow.collect { nalData ->
-                    if (ws.isOpen && nalData.isNotEmpty()) {
-                        // Cache SPS+PPS and IDR for replay on Tesla reconnect
-                        val nalType = findFirstNalType(nalData)
-                        if (nalType == 7) cachedCodecConfig = nalData.copyOf()
-                        else if (nalType == 5) cachedIdr = nalData.copyOf()
+                if (mjpegMode) {
+                    // MJPEG mode: decode H.264 → JPEG on phone, send as 0x04 frames.
+                    // Bypasses browser's VideoDecoder API (blocked by Tesla while driving).
+                    Timber.i("Relay: starting MJPEG flow collection (${videoWidth}x${videoHeight})")
+                    val encoder = com.supertesla.aa.streaming.video.MjpegStreamEncoder(
+                        width = videoWidth,
+                        height = videoHeight,
+                        quality = 60,
+                        maxFps = 20
+                    )
+                    mjpegEncoder = encoder
+                    try {
+                        encoder.start(videoFlow).collect { jpegData ->
+                            if (ws.isOpen) {
+                                ws.send(VideoStreamHandler.prefixMjpeg(jpegData))
+                            }
+                        }
+                    } finally {
+                        encoder.stop()
+                    }
+                } else {
+                    // H.264 mode: forward raw NAL units with keyframe gating.
+                    videoFlow.collect { nalData ->
+                        if (ws.isOpen && nalData.isNotEmpty()) {
+                            val nalType = findFirstNalType(nalData)
+                            if (nalType == 7) cachedCodecConfig = nalData.copyOf()
+                            else if (nalType == 5) cachedIdr = nalData.copyOf()
 
-                        if (!keyframeGateOpen) {
-                            if (nalType == 7 || nalType == 5) {
-                                keyframeGateOpen = true
-                                Timber.d("Relay: gate opened by live NAL type=$nalType (${nalData.size}b)")
+                            if (!keyframeGateOpen) {
+                                if (nalType == 7 || nalType == 5) {
+                                    keyframeGateOpen = true
+                                    Timber.d("Relay: gate opened by live NAL type=$nalType (${nalData.size}b)")
+                                    ws.send(VideoStreamHandler.prefixVideo(nalData))
+                                }
+                            } else {
                                 ws.send(VideoStreamHandler.prefixVideo(nalData))
                             }
-                            // Drop P-frames until keyframe
-                        } else {
-                            ws.send(VideoStreamHandler.prefixVideo(nalData))
                         }
                     }
                 }
@@ -258,10 +281,28 @@ class CloudRelayClient(
                 }
             }
 
+            // Handle MJPEG mode switching
+            val action = json.optString("action", "")
+            if (action == "REQUEST_MJPEG" && !mjpegMode) {
+                Timber.i("Relay: Tesla requested MJPEG mode — switching")
+                mjpegMode = true
+                stopFlowCollection()
+                client?.let { startFlowCollection(it) }
+                return
+            }
+            if (action == "REQUEST_H264" && mjpegMode) {
+                Timber.i("Relay: Tesla requested H.264 mode — switching back")
+                mjpegMode = false
+                mjpegEncoder?.stop()
+                mjpegEncoder = null
+                stopFlowCollection()
+                client?.let { startFlowCollection(it) }
+                return
+            }
+
             // Try touch relay
             val handled = touchRelay?.handleMessage(text) ?: false
             if (!handled) {
-                val action = json.optString("action", "")
                 if (action.isNotEmpty()) {
                     onAction?.invoke(action, text)
                 }
